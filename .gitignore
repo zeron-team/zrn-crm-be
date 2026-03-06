@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads (user data)
+uploads/invoices/*
+uploads/service_payments/*
+!uploads/invoices/.gitkeep
+!uploads/service_payments/.gitkeep
+
+# Logs
+*.log
+
+# ARCA (ex AFIP) certificates - NEVER commit these
+arca/certs/*.crt
+arca/certs/*.key
