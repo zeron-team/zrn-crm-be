@@ -11,6 +11,8 @@ from app.database import get_db
 from app.models.project import Project, ProjectMember, Sprint, Task, ProjectVersion, TaskChecklistItem, TaskAttachment
 from app.models.client import Client
 from app.models.quote import Quote
+from app.models.user import User
+from app.api.endpoints.auth import get_current_user
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -147,24 +149,29 @@ def list_projects(status: Optional[str] = Query(None), client_id: Optional[int] 
         client_name = None
         if p.client_id:
             c = db.query(Client).get(p.client_id)
-            client_name = c.company_name if c else None
+            client_name = c.name if c else None
         quote_number = None
         if p.quote_id:
             qt = db.query(Quote).get(p.quote_id)
             quote_number = qt.quote_number if qt else None
+        created_by_name = None
+        if p.created_by:
+            u = db.query(User).get(p.created_by)
+            created_by_name = u.full_name if u else None
         result.append({
             "id": p.id, "name": p.name, "description": p.description, "key": p.key,
             "status": p.status, "methodology": p.methodology,
             "client_id": p.client_id, "client_name": client_name,
             "quote_id": p.quote_id, "quote_number": quote_number,
-            "created_by": p.created_by, "created_at": p.created_at, "updated_at": p.updated_at,
+            "created_by": p.created_by, "created_by_name": created_by_name,
+            "created_at": p.created_at, "updated_at": p.updated_at,
             "task_count": task_count, "done_count": done_count, "member_count": member_count,
         })
     return result
 
 
 @router.post("", status_code=201)
-def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
+def create_project(data: ProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     existing = db.query(Project).filter(Project.key == data.key.upper()).first()
     if existing:
         raise HTTPException(400, f"Project key '{data.key}' already exists")
@@ -175,6 +182,7 @@ def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
             dump['client_id'] = quote.client_id
     project = Project(**dump)
     project.key = data.key.upper()
+    project.created_by = current_user.id
     db.add(project)
     db.commit()
     db.refresh(project)

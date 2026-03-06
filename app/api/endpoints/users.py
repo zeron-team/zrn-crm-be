@@ -48,13 +48,20 @@ def get_online_users(current_user: User = Depends(get_current_user)):
     return {"count": len(online), "users": online}
 
 @router.post("/heartbeat")
-def heartbeat(current_user: User = Depends(get_current_user)):
+def heartbeat(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Register a ping from the authenticated user."""
+    now = datetime.utcnow()
+    prev = _online_users.get(current_user.id)
     _online_users[current_user.id] = {
         "email": current_user.email,
         "full_name": current_user.full_name or current_user.email,
-        "last_seen": datetime.utcnow(),
+        "last_seen": now,
     }
+    # Update last_login in DB on first heartbeat or every 60s
+    should_update = not prev or (now - prev["last_seen"]).total_seconds() >= 60
+    if should_update:
+        current_user.last_login = now
+        db.commit()
     return {"ok": True}
 
 @router.get("/{user_id}", response_model=UserResponse)

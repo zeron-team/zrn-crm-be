@@ -84,6 +84,14 @@ class RoleConfigUpdate(BaseModel):
     own_data_only: Optional[bool] = None
 
 
+class RoleConfigCreate(BaseModel):
+    role_name: str
+    display_name: str
+    description: Optional[str] = None
+    allowed_pages: List[str] = []
+    own_data_only: bool = True
+
+
 def serialize(rc: RoleConfig) -> dict:
     return {
         "id": rc.id,
@@ -126,6 +134,46 @@ def update_role_config(role_name: str, data: RoleConfigUpdate, db: Session = Dep
     db.commit()
     db.refresh(rc)
     return serialize(rc)
+
+
+BUILTIN_ROLES = {'admin', 'user', 'empleado', 'vendedor'}
+
+
+@router.post("/")
+def create_role_config(data: RoleConfigCreate, db: Session = Depends(get_db)):
+    """Create a new custom role."""
+    import re
+    # Normalize role_name: lowercase, no spaces, alphanumeric + underscore
+    role_name = re.sub(r'[^a-z0-9_]', '', data.role_name.lower().replace(' ', '_'))
+    if not role_name:
+        raise HTTPException(status_code=400, detail="Nombre de rol inválido")
+    existing = db.query(RoleConfig).filter(RoleConfig.role_name == role_name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Ya existe un rol con el nombre '{role_name}'")
+    rc = RoleConfig(
+        role_name=role_name,
+        display_name=data.display_name,
+        description=data.description,
+        allowed_pages=data.allowed_pages,
+        own_data_only=data.own_data_only,
+    )
+    db.add(rc)
+    db.commit()
+    db.refresh(rc)
+    return serialize(rc)
+
+
+@router.delete("/{role_name}")
+def delete_role_config(role_name: str, db: Session = Depends(get_db)):
+    """Delete a custom role. Built-in roles cannot be deleted."""
+    if role_name in BUILTIN_ROLES:
+        raise HTTPException(status_code=400, detail=f"El rol '{role_name}' es un rol del sistema y no se puede eliminar")
+    rc = db.query(RoleConfig).filter(RoleConfig.role_name == role_name).first()
+    if not rc:
+        raise HTTPException(status_code=404, detail="Role not found")
+    db.delete(rc)
+    db.commit()
+    return {"ok": True, "deleted": role_name}
 
 
 @router.get("/user-permissions/{user_id}")

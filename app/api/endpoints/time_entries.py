@@ -13,25 +13,28 @@ router = APIRouter(prefix="/time-entries", tags=["time_entries"])
 
 @router.get("/my-status/{user_email}")
 def get_my_status(user_email: str, db: Session = Depends(get_db)):
-    """Get current time-tracking status for a user (matched by email or name to employee)."""
+    """Get current time-tracking status for a user (matched by user_id, email, or name to employee)."""
     from app.models.user import User
-    # Try match by email first
-    emp = db.query(Employee).filter(Employee.email == user_email).first()
+    emp = None
+    # Priority 1: Match User → Employee via user_id FK
+    user = db.query(User).filter(User.email == user_email).first()
+    if user:
+        emp = db.query(Employee).filter(Employee.user_id == user.id).first()
+    # Priority 2: Match by employee email
     if not emp:
-        # Try by matching User full_name to Employee first+last name
-        user = db.query(User).filter(User.email == user_email).first()
-        if user and user.full_name:
-            parts = user.full_name.strip().split()
-            if len(parts) >= 2:
-                emp = db.query(Employee).filter(
-                    Employee.first_name == parts[0],
-                    Employee.last_name == " ".join(parts[1:])
-                ).first()
-            if not emp:
-                # Try partial match
-                emp = db.query(Employee).filter(
-                    Employee.first_name.ilike(f"%{parts[0]}%")
-                ).first()
+        emp = db.query(Employee).filter(Employee.email == user_email).first()
+    # Priority 3: Match by name
+    if not emp and user and user.full_name:
+        parts = user.full_name.strip().split()
+        if len(parts) >= 2:
+            emp = db.query(Employee).filter(
+                Employee.first_name == parts[0],
+                Employee.last_name == " ".join(parts[1:])
+            ).first()
+        if not emp and parts:
+            emp = db.query(Employee).filter(
+                Employee.first_name.ilike(f"%{parts[0]}%")
+            ).first()
     if not emp:
         return {"state": "no_employee", "worked_seconds": 0, "employee_id": None}
 

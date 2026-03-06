@@ -13,6 +13,7 @@ from app.api.endpoints import employees
 from app.api.endpoints import time_entries
 from app.api.endpoints import role_configs
 from app.api.endpoints import payroll
+from app.api.endpoints import company_settings
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -51,5 +52,6 @@ api_router.include_router(employees.router)
 api_router.include_router(time_entries.router)
 api_router.include_router(role_configs.router)
 api_router.include_router(payroll.router)
+api_router.include_router(company_settings.router)
 
 

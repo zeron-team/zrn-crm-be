@@ -8,7 +8,7 @@ from app.repositories.user import user_repository
 from app.core.security import verify_password, create_access_token, decode_token
 from app.core.config import settings
 from app.schemas.user import UserResponse
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 router = APIRouter()
 
@@ -78,6 +78,10 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
         secret_key=settings.SECRET_KEY,
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
+    # Update last_login timestamp
+    user.last_login = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
     return LoginResponse(access_token=access_token, user=UserResponse.model_validate(user))
 
 
