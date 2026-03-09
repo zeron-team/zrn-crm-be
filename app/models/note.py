@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -13,9 +13,14 @@ class Note(Base):
     color = Column(String(20), default="yellow")  # yellow, green, blue, pink, purple, orange
     position_x = Column(Integer, default=0)
     position_y = Column(Integer, default=0)
+    sort_order = Column(Integer, default=0)
+
+    # Privacy / sharing
+    visibility = Column(String(20), default="team")  # private, team, shared
+    shared_with = Column(JSON, nullable=True)         # list of user IDs when visibility='shared'
 
     # Polymorphic entity association
-    entity_type = Column(String(50), nullable=True, index=True)  # client, lead, provider, contact, invoice, quote, ticket
+    entity_type = Column(String(50), nullable=True, index=True)
     entity_id = Column(Integer, nullable=True, index=True)
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)

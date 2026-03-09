@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     ENCRYPTION_KEY: str = ""  # 64 hex chars = 32 bytes for AES-256-GCM
     BACKUP_DIR: str = "/home/ubuntu/backups/zeron-crm"
+    LICENSE_SECRET: str = "zeron-360-production-license-key"
 
     class Config:
         env_file = ".env"

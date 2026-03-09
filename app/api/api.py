@@ -60,4 +60,7 @@ api_router.include_router(ai_chat.router, prefix="/ai", tags=["ai"])
 api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
 api_router.include_router(system_status.router, prefix="/system", tags=["system"])
 
+from app.api.endpoints import employee_novelties
+api_router.include_router(employee_novelties.router)
+
 

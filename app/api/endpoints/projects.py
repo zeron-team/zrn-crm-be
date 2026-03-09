@@ -8,7 +8,7 @@ from sqlalchemy import desc, func, asc
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models.project import Project, ProjectMember, Sprint, Task, ProjectVersion, TaskChecklistItem, TaskAttachment
+from app.models.project import Project, ProjectMember, Sprint, Task, ProjectVersion, TaskChecklistItem, TaskAttachment, ProjectNote, ProjectWikiPage
 from app.models.client import Client
 from app.models.quote import Quote
 from app.models.user import User
@@ -28,6 +28,7 @@ class ProjectCreate(BaseModel):
     methodology: str = "kanban"
     client_id: Optional[int] = None
     quote_id: Optional[int] = None
+    pm_id: Optional[int] = None
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
@@ -36,6 +37,7 @@ class ProjectUpdate(BaseModel):
     methodology: Optional[str] = None
     client_id: Optional[int] = None
     quote_id: Optional[int] = None
+    pm_id: Optional[int] = None
 
 class MemberCreate(BaseModel):
     user_id: int
@@ -78,6 +80,8 @@ class TaskCreate(BaseModel):
     parent_id: Optional[int] = None
     assigned_to: Optional[int] = None
     story_points: Optional[int] = None
+    estimated_hours: Optional[float] = None
+    actual_hours: Optional[float] = None
     labels: Optional[str] = None
     due_date: Optional[date] = None
     start_date: Optional[date] = None
@@ -92,6 +96,8 @@ class TaskUpdate(BaseModel):
     parent_id: Optional[int] = None
     assigned_to: Optional[int] = None
     story_points: Optional[int] = None
+    estimated_hours: Optional[float] = None
+    actual_hours: Optional[float] = None
     labels: Optional[str] = None
     due_date: Optional[date] = None
     start_date: Optional[date] = None
@@ -117,7 +123,9 @@ def task_to_dict(t: Task, db: Session, depth: int = 0) -> dict:
         "id": t.id, "key": t.key, "title": t.title, "description": t.description,
         "type": t.type, "status": t.status, "priority": t.priority,
         "assigned_to": t.assigned_to, "reporter": t.reporter,
-        "story_points": t.story_points, "position": t.position,
+        "story_points": t.story_points,
+        "estimated_hours": t.estimated_hours, "actual_hours": t.actual_hours or 0,
+        "position": t.position,
         "labels": t.labels, "due_date": str(t.due_date) if t.due_date else None,
         "start_date": str(t.start_date) if t.start_date else None,
         "sprint_id": t.sprint_id, "parent_id": t.parent_id,
@@ -158,12 +166,17 @@ def list_projects(status: Optional[str] = Query(None), client_id: Optional[int] 
         if p.created_by:
             u = db.query(User).get(p.created_by)
             created_by_name = u.full_name if u else None
+        pm_name = None
+        if p.pm_id:
+            pm_user = db.query(User).get(p.pm_id)
+            pm_name = pm_user.full_name if pm_user else None
         result.append({
             "id": p.id, "name": p.name, "description": p.description, "key": p.key,
             "status": p.status, "methodology": p.methodology,
             "client_id": p.client_id, "client_name": client_name,
             "quote_id": p.quote_id, "quote_number": quote_number,
             "created_by": p.created_by, "created_by_name": created_by_name,
+            "pm_id": p.pm_id, "pm_name": pm_name,
             "created_at": p.created_at, "updated_at": p.updated_at,
             "task_count": task_count, "done_count": done_count, "member_count": member_count,
         })
@@ -194,11 +207,16 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     p = db.query(Project).get(project_id)
     if not p:
         raise HTTPException(404, "Project not found")
+    pm_name = None
+    if p.pm_id:
+        pm_user = db.query(User).get(p.pm_id)
+        pm_name = pm_user.full_name if pm_user else None
     return {
         "id": p.id, "name": p.name, "description": p.description, "key": p.key,
         "status": p.status, "methodology": p.methodology,
         "client_id": p.client_id, "quote_id": p.quote_id,
-        "created_by": p.created_by, "created_at": p.created_at, "updated_at": p.updated_at,
+        "created_by": p.created_by, "pm_id": p.pm_id, "pm_name": pm_name,
+        "created_at": p.created_at, "updated_at": p.updated_at,
     }
 
 
@@ -353,6 +371,17 @@ def update_sprint(project_id: int, sprint_id: int, data: SprintUpdate, db: Sessi
     db.commit()
     db.refresh(s)
     return s
+
+@router.delete("/{project_id}/sprints/{sprint_id}")
+def delete_sprint(project_id: int, sprint_id: int, db: Session = Depends(get_db)):
+    s = db.query(Sprint).filter(Sprint.id == sprint_id, Sprint.project_id == project_id).first()
+    if not s:
+        raise HTTPException(404, "Sprint not found")
+    # Move tasks to backlog
+    db.query(Task).filter(Task.sprint_id == sprint_id).update({"sprint_id": None})
+    db.delete(s)
+    db.commit()
+    return {"ok": True}
 
 
 # ══════════════════════════════════════
@@ -575,3 +604,284 @@ def delete_attachment(project_id: int, task_id: int, att_id: int, db: Session = 
     db.delete(att)
     db.commit()
     return {"ok": True}
+
+
+# ══════════════════════════════════════
+#  Project Summary / Overview
+# ══════════════════════════════════════
+
+@router.get("/{project_id}/summary")
+def project_summary(project_id: int, db: Session = Depends(get_db)):
+    """Aggregated project dashboard data."""
+    p = db.query(Project).get(project_id)
+    if not p:
+        raise HTTPException(404, "Project not found")
+
+    all_tasks = db.query(Task).filter(Task.project_id == project_id).all()
+    all_sprints = db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.created_at).all()
+    all_versions = db.query(ProjectVersion).filter(ProjectVersion.project_id == project_id).order_by(ProjectVersion.created_at).all()
+    members = db.query(ProjectMember).filter(ProjectMember.project_id == project_id).all()
+
+    # Client + PM names
+    client_name = None
+    if p.client_id:
+        c = db.query(Client).get(p.client_id)
+        client_name = c.name if c else None
+    pm_name = None
+    if p.pm_id:
+        pm_user = db.query(User).get(p.pm_id)
+        pm_name = pm_user.full_name if pm_user else None
+    created_by_name = None
+    if p.created_by:
+        u = db.query(User).get(p.created_by)
+        created_by_name = u.full_name if u else None
+
+    # Task counts by status
+    status_counts = {}
+    type_counts = {}
+    total_sp = 0
+    total_est = 0.0
+    total_act = 0.0
+    for t in all_tasks:
+        status_counts[t.status] = status_counts.get(t.status, 0) + 1
+        type_counts[t.type] = type_counts.get(t.type, 0) + 1
+        total_sp += t.story_points or 0
+        total_est += t.estimated_hours or 0
+        total_act += t.actual_hours or 0
+
+    # Sprint breakdown — weighted progress for intermediate statuses
+    status_weight = {'todo': 0, 'in_progress': 0.5, 'in_review': 0.75, 'review': 0.75, 'done': 1.0}
+    sprint_breakdown = []
+    for s in all_sprints:
+        s_tasks = [t for t in all_tasks if t.sprint_id == s.id]
+        s_done = sum(1 for t in s_tasks if t.status == 'done')
+        s_progress = sum(status_weight.get(t.status, 0.25) for t in s_tasks)
+        s_sp = sum(t.story_points or 0 for t in s_tasks)
+        s_est = sum(t.estimated_hours or 0 for t in s_tasks)
+        s_act = sum(t.actual_hours or 0 for t in s_tasks)
+        sprint_breakdown.append({
+            "id": s.id, "name": s.name, "status": s.status,
+            "version_id": s.version_id,
+            "start_date": str(s.start_date) if s.start_date else None,
+            "end_date": str(s.end_date) if s.end_date else None,
+            "task_count": len(s_tasks), "done_count": s_done,
+            "story_points": s_sp, "estimated_hours": round(s_est, 1),
+            "actual_hours": round(s_act, 1),
+            "completion": round(s_progress / len(s_tasks) * 100) if s_tasks else 0,
+        })
+
+    # Backlog (tasks without sprint)
+    backlog_tasks = [t for t in all_tasks if t.sprint_id is None]
+    backlog_sp = sum(t.story_points or 0 for t in backlog_tasks)
+
+    # Version roadmap
+    version_info = []
+    for v in all_versions:
+        v_sprints = [s for s in sprint_breakdown if s["version_id"] == v.id]
+        v_tasks = sum(s["task_count"] for s in v_sprints)
+        v_done = sum(s["done_count"] for s in v_sprints)
+        version_info.append({
+            "id": v.id, "name": v.name, "status": v.status,
+            "description": v.description,
+            "start_date": str(v.start_date) if v.start_date else None,
+            "release_date": str(v.release_date) if v.release_date else None,
+            "sprint_count": len(v_sprints), "sprints": [s["name"] for s in v_sprints],
+            "task_count": v_tasks, "done_count": v_done,
+            "completion": round(v_done / v_tasks * 100) if v_tasks else 0,
+        })
+
+    # Resource allocation
+    user_ids = set(t.assigned_to for t in all_tasks if t.assigned_to)
+    resource_alloc = []
+    for uid in user_ids:
+        u = db.query(User).get(uid)
+        u_tasks = [t for t in all_tasks if t.assigned_to == uid]
+        u_done = sum(1 for t in u_tasks if t.status == 'done')
+        u_sp = sum(t.story_points or 0 for t in u_tasks)
+        u_est = sum(t.estimated_hours or 0 for t in u_tasks)
+        u_act = sum(t.actual_hours or 0 for t in u_tasks)
+        resource_alloc.append({
+            "user_id": uid, "name": u.full_name if u else "Unknown",
+            "task_count": len(u_tasks), "done_count": u_done,
+            "story_points": u_sp,
+            "estimated_hours": round(u_est, 1), "actual_hours": round(u_act, 1),
+        })
+
+    return {
+        "project": {
+            "id": p.id, "name": p.name, "key": p.key, "status": p.status,
+            "methodology": p.methodology, "description": p.description,
+            "client_name": client_name, "pm_name": pm_name,
+            "created_by_name": created_by_name,
+            "created_at": p.created_at, "updated_at": p.updated_at,
+        },
+        "totals": {
+            "tasks": len(all_tasks), "done": status_counts.get("done", 0),
+            "in_progress": status_counts.get("in_progress", 0),
+            "todo": status_counts.get("todo", 0),
+            "story_points": total_sp,
+            "estimated_hours": round(total_est, 1),
+            "actual_hours": round(total_act, 1),
+            "members": len(members),
+            "sprints": len(all_sprints),
+            "versions": len(all_versions),
+        },
+        "status_counts": status_counts,
+        "type_counts": type_counts,
+        "sprint_breakdown": sprint_breakdown,
+        "backlog": {"task_count": len(backlog_tasks), "story_points": backlog_sp},
+        "versions": version_info,
+        "resources": resource_alloc,
+    }
+
+
+# ══════════════════════════════════════
+#  Project Notes
+# ══════════════════════════════════════
+
+class NoteCreate(BaseModel):
+    title: str
+    content: Optional[str] = None
+    color: str = "yellow"
+    visibility: str = "team"
+    shared_with: Optional[list] = None
+
+class NoteUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    color: Optional[str] = None
+    visibility: Optional[str] = None
+    shared_with: Optional[list] = None
+
+class NoteReorder(BaseModel):
+    order: list
+
+def _note_dict(n, db):
+    return {
+        "id": n.id, "title": n.title, "content": n.content, "color": n.color,
+        "sort_order": n.sort_order or 0,
+        "visibility": n.visibility or "team",
+        "shared_with": n.shared_with or [],
+        "created_by": n.created_by,
+        "created_by_name": db.query(User).get(n.created_by).full_name if n.created_by else None,
+        "created_at": n.created_at, "updated_at": n.updated_at,
+    }
+
+@router.get("/{project_id}/notes")
+def list_notes(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    uid = current_user.id
+    notes = db.query(ProjectNote).filter(ProjectNote.project_id == project_id)\
+        .order_by(ProjectNote.sort_order.asc(), desc(ProjectNote.updated_at)).all()
+    result = []
+    for n in notes:
+        if n.visibility == "private" and n.created_by != uid:
+            continue
+        if n.visibility == "shared" and n.created_by != uid:
+            if not n.shared_with or uid not in n.shared_with:
+                continue
+        result.append(_note_dict(n, db))
+    return result
+
+@router.post("/{project_id}/notes", status_code=201)
+def create_note(project_id: int, data: NoteCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    max_order = db.query(ProjectNote).filter(ProjectNote.project_id == project_id).count()
+    n = ProjectNote(
+        project_id=project_id, title=data.title, content=data.content,
+        color=data.color, created_by=current_user.id, sort_order=max_order,
+        visibility=data.visibility,
+        shared_with=data.shared_with if data.visibility == "shared" else None,
+    )
+    db.add(n)
+    db.commit()
+    db.refresh(n)
+    return _note_dict(n, db)
+
+@router.put("/{project_id}/notes/reorder")
+def reorder_notes(project_id: int, data: NoteReorder, db: Session = Depends(get_db)):
+    for idx, nid in enumerate(data.order):
+        n = db.query(ProjectNote).filter(ProjectNote.id == nid, ProjectNote.project_id == project_id).first()
+        if n:
+            n.sort_order = idx
+    db.commit()
+    return {"ok": True}
+
+@router.put("/{project_id}/notes/{note_id}")
+def update_note(project_id: int, note_id: int, data: NoteUpdate, db: Session = Depends(get_db)):
+    n = db.query(ProjectNote).filter(ProjectNote.id == note_id, ProjectNote.project_id == project_id).first()
+    if not n:
+        raise HTTPException(404, "Note not found")
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(n, k, v)
+    db.commit()
+    db.refresh(n)
+    return _note_dict(n, db)
+
+@router.delete("/{project_id}/notes/{note_id}")
+def delete_note(project_id: int, note_id: int, db: Session = Depends(get_db)):
+    n = db.query(ProjectNote).filter(ProjectNote.id == note_id, ProjectNote.project_id == project_id).first()
+    if not n:
+        raise HTTPException(404, "Note not found")
+    db.delete(n)
+    db.commit()
+    return {"ok": True}
+
+
+# ══════════════════════════════════════
+#  Project Wiki
+# ══════════════════════════════════════
+
+class WikiCreate(BaseModel):
+    title: str
+    content: Optional[str] = None
+    parent_id: Optional[int] = None
+
+class WikiUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    parent_id: Optional[int] = None
+
+@router.get("/{project_id}/wiki")
+def list_wiki(project_id: int, db: Session = Depends(get_db)):
+    pages = db.query(ProjectWikiPage).filter(ProjectWikiPage.project_id == project_id).order_by(ProjectWikiPage.created_at).all()
+    return [{
+        "id": pg.id, "title": pg.title, "content": pg.content,
+        "slug": pg.slug, "parent_id": pg.parent_id,
+        "created_by": pg.created_by,
+        "created_by_name": db.query(User).get(pg.created_by).full_name if pg.created_by else None,
+        "created_at": pg.created_at, "updated_at": pg.updated_at,
+    } for pg in pages]
+
+@router.post("/{project_id}/wiki", status_code=201)
+def create_wiki_page(project_id: int, data: WikiCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    import re
+    slug = re.sub(r'[^a-z0-9]+', '-', data.title.lower()).strip('-')
+    pg = ProjectWikiPage(project_id=project_id, title=data.title, content=data.content, slug=slug,
+                         parent_id=data.parent_id, created_by=current_user.id)
+    db.add(pg)
+    db.commit()
+    db.refresh(pg)
+    return {"id": pg.id, "title": pg.title, "content": pg.content, "slug": pg.slug, "parent_id": pg.parent_id, "created_at": pg.created_at}
+
+@router.put("/{project_id}/wiki/{page_id}")
+def update_wiki_page(project_id: int, page_id: int, data: WikiUpdate, db: Session = Depends(get_db)):
+    pg = db.query(ProjectWikiPage).filter(ProjectWikiPage.id == page_id, ProjectWikiPage.project_id == project_id).first()
+    if not pg:
+        raise HTTPException(404, "Wiki page not found")
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(pg, k, v)
+    if data.title:
+        import re
+        pg.slug = re.sub(r'[^a-z0-9]+', '-', data.title.lower()).strip('-')
+    db.commit()
+    db.refresh(pg)
+    return {"id": pg.id, "title": pg.title, "content": pg.content, "slug": pg.slug, "parent_id": pg.parent_id, "updated_at": pg.updated_at}
+
+@router.delete("/{project_id}/wiki/{page_id}")
+def delete_wiki_page(project_id: int, page_id: int, db: Session = Depends(get_db)):
+    pg = db.query(ProjectWikiPage).filter(ProjectWikiPage.id == page_id, ProjectWikiPage.project_id == project_id).first()
+    if not pg:
+        raise HTTPException(404, "Wiki page not found")
+    db.delete(pg)
+    db.commit()
+    return {"ok": True}
+

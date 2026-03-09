@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Date, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, Date, ForeignKey, Boolean, Float, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -16,6 +16,7 @@ class Project(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    pm_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Project Manager
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
@@ -23,6 +24,7 @@ class Project(Base):
     client = relationship("Client", backref="projects")
     quote = relationship("Quote", backref="projects")
     creator = relationship("User", foreign_keys=[created_by], backref="created_projects")
+    pm = relationship("User", foreign_keys=[pm_id], backref="managed_projects")
     members = relationship("ProjectMember", back_populates="project", cascade="all, delete-orphan")
     sprints = relationship("Sprint", back_populates="project", cascade="all, delete-orphan")
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
@@ -91,6 +93,8 @@ class Task(Base):
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
     reporter = Column(Integer, ForeignKey("users.id"), nullable=True)
     story_points = Column(Integer, nullable=True)
+    estimated_hours = Column(Float, nullable=True)  # Horas estimadas
+    actual_hours = Column(Float, default=0)  # Horas dedicadas
     position = Column(Integer, default=0)  # order within column
     labels = Column(String(500), nullable=True)  # comma-separated
     due_date = Column(Date, nullable=True)
@@ -134,3 +138,42 @@ class TaskAttachment(Base):
 
     task = relationship("Task", back_populates="attachments")
     uploader = relationship("User", backref="task_uploads")
+
+
+class ProjectNote(Base):
+    __tablename__ = "project_notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=True)
+    color = Column(String(20), default="yellow")
+    sort_order = Column(Integer, default=0)
+    visibility = Column(String(20), default="team")        # private, team, shared
+    shared_with = Column(JSON, nullable=True)               # list of user IDs
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    project = relationship("Project", backref="notes")
+    creator = relationship("User", backref="project_notes_created")
+
+
+class ProjectWikiPage(Base):
+    __tablename__ = "project_wiki_pages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=True)
+    slug = Column(String(255), nullable=True)
+    parent_id = Column(Integer, ForeignKey("project_wiki_pages.id", ondelete="SET NULL"), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    project = relationship("Project", backref="wiki_pages")
+    parent = relationship("ProjectWikiPage", remote_side=[id], backref="children")
+    creator = relationship("User", backref="wiki_pages_created")
