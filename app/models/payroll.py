@@ -60,6 +60,10 @@ class PayrollSlip(Base):
     status = Column(String, nullable=False, default="draft")  # draft, confirmed, paid
     payment_date = Column(Date, nullable=True)
     notes = Column(Text, nullable=True)
+    signature_status = Column(String(20), default="pending")  # pending, sent, signed, rejected
+    signature_date = Column(DateTime, nullable=True)
+    signature_ip = Column(String(50), nullable=True)
+    sent_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

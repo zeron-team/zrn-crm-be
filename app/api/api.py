@@ -66,3 +66,5 @@ api_router.include_router(employee_novelties.router)
 from app.api.endpoints import accounting
 api_router.include_router(accounting.router)
 
+from app.api.endpoints import employee_documents
+api_router.include_router(employee_documents.router)

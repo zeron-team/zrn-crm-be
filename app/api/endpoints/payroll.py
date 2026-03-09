@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.payroll import PayrollConcept, PayrollPeriod, PayrollSlip, PayrollSlipItem
 from app.models.employee import Employee
+from app.api.endpoints.auth import get_current_user
 from pydantic import BaseModel
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+import io
 
 router = APIRouter(prefix="/payroll", tags=["payroll"])
 
@@ -111,6 +114,9 @@ def serialize_slip(s: PayrollSlip, include_items=False) -> dict:
         "total_employer_cost": float(s.total_employer_cost or 0),
         "status": s.status, "payment_date": s.payment_date.isoformat() if s.payment_date else None,
         "notes": s.notes,
+        "signature_status": getattr(s, 'signature_status', 'pending') or 'pending',
+        "signature_date": s.signature_date.isoformat() if getattr(s, 'signature_date', None) else None,
+        "sent_date": s.sent_date.isoformat() if getattr(s, 'sent_date', None) else None,
     }
     if include_items:
         d["items"] = [
@@ -442,3 +448,195 @@ def _recalc_slip(slip: PayrollSlip, db: Session):
     slip.total_deductions = Decimal(str(total_ded))
     slip.net_salary = Decimal(str(round(total_rem + total_no_rem - total_ded, 2)))
     slip.total_employer_cost = Decimal(str(round(total_emp, 2)))
+
+
+# ─── Digital Receipt: Send / Sign / PDF ────────────────────────────
+
+@router.post("/slips/{sid}/send")
+def send_recibo(sid: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Mark a payroll slip as sent (digital receipt dispatched to employee)."""
+    s = db.query(PayrollSlip).filter(PayrollSlip.id == sid).first()
+    if not s:
+        raise HTTPException(404, "Slip not found")
+    s.signature_status = "sent"
+    s.sent_date = datetime.now()
+    db.commit()
+    return {"ok": True, "signature_status": "sent"}
+
+
+@router.post("/periods/{pid}/send-all")
+def send_all_recibos(pid: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Send all slips in a period as digital receipts."""
+    slips = db.query(PayrollSlip).filter(PayrollSlip.period_id == pid).all()
+    now = datetime.now()
+    count = 0
+    for s in slips:
+        if s.signature_status in ("pending", None):
+            s.signature_status = "sent"
+            s.sent_date = now
+            count += 1
+    db.commit()
+    return {"ok": True, "sent": count}
+
+
+@router.put("/slips/{sid}/sign")
+def sign_recibo(sid: int, data: dict, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Employee signs (accepts/rejects) a payroll slip."""
+    s = db.query(PayrollSlip).filter(PayrollSlip.id == sid).first()
+    if not s:
+        raise HTTPException(404, "Slip not found")
+    action = data.get("action", "sign")
+    if action == "sign":
+        s.signature_status = "signed"
+    elif action == "reject":
+        s.signature_status = "rejected"
+    else:
+        raise HTTPException(400, "Acción inválida. Use 'sign' o 'reject'")
+    s.signature_date = datetime.now()
+    s.signature_ip = data.get("ip", "")
+    db.commit()
+    return {"ok": True, "signature_status": s.signature_status}
+
+
+@router.get("/slips/{sid}/pdf")
+def download_recibo_pdf(sid: int, db: Session = Depends(get_db)):
+    """Generate a simple PDF receipt for a payroll slip."""
+    s = db.query(PayrollSlip).options(
+        joinedload(PayrollSlip.employee),
+        joinedload(PayrollSlip.items),
+        joinedload(PayrollSlip.period),
+    ).filter(PayrollSlip.id == sid).first()
+    if not s:
+        raise HTTPException(404, "Slip not found")
+
+    emp = s.employee
+    period = s.period
+    emp_name = f"{emp.first_name} {emp.last_name}" if emp else "—"
+    period_desc = period.description or f"{MONTH_NAMES[period.month]} {period.year}" if period else "—"
+
+    # Build simple text-based receipt
+    lines = []
+    lines.append("="*60)
+    lines.append("RECIBO DE SUELDO")
+    lines.append("="*60)
+    lines.append(f"Empleado: {emp_name}")
+    lines.append(f"Legajo: {emp.legajo if emp else '—'}")
+    lines.append(f"CUIL: {emp.cuil if emp else '—'}")
+    lines.append(f"Período: {period_desc}")
+    lines.append(f"Fecha emisión: {datetime.now().strftime('%d/%m/%Y')}")
+    lines.append("-"*60)
+    lines.append(f"{'Concepto':<30} {'Tipo':<15} {'Monto':>12}")
+    lines.append("-"*60)
+    for item in sorted(s.items, key=lambda x: x.sort_order or 0):
+        if item.type != "employer_cost":
+            lines.append(f"{(item.concept_name or '—'):<30} {item.type:<15} {float(item.amount or 0):>12,.2f}")
+    lines.append("-"*60)
+    lines.append(f"{'TOTAL REMUNERATIVO':<30} {'':15} {float(s.total_remunerativo or 0):>12,.2f}")
+    lines.append(f"{'TOTAL DEDUCCIONES':<30} {'':15} {float(s.total_deductions or 0):>12,.2f}")
+    lines.append(f"{'NETO A COBRAR':<30} {'':15} {float(s.net_salary or 0):>12,.2f}")
+    lines.append("="*60)
+    if s.signature_status == "signed":
+        lines.append(f"Firmado electrónicamente: {s.signature_date.strftime('%d/%m/%Y %H:%M') if s.signature_date else '—'}")
+    lines.append("")
+    lines.append("COSTO EMPLEADOR:")
+    for item in sorted(s.items, key=lambda x: x.sort_order or 0):
+        if item.type == "employer_cost":
+            lines.append(f"  {(item.concept_name or '—'):<28} {float(item.amount or 0):>12,.2f}")
+    lines.append(f"  {'TOTAL PATRONAL':<28} {float(s.total_employer_cost or 0):>12,.2f}")
+    lines.append("="*60)
+
+    content = "\n".join(lines)
+    return Response(
+        content=content,
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="recibo_{emp.legajo if emp else sid}_{period_desc.replace(" ", "_")}.txt"'}
+    )
+
+
+# ─── Libro de Sueldos Digital — AFIP TXT Export ────────────────────
+
+# AFIP concept code mapping (simplified)
+AFIP_CONCEPT_MAP = {
+    "SUELDO": ("1", "Sueldo/Jornal"),
+    "JUB_EMP": ("301", "Jubilación"),
+    "PAMI_EMP": ("302", "Ley 19.032 (INSSJP)"),
+    "OS_EMP": ("303", "Obra Social"),
+    "SIND": ("304", "Cuota Sindical"),
+    "JUB_PAT": ("351", "Contrib. Jubilación"),
+    "PAMI_PAT": ("352", "Contrib. INSSJP"),
+    "OS_PAT": ("353", "Contrib. Obra Social"),
+    "FNE": ("354", "Fondo Nac. Empleo"),
+    "ASIG_FAM": ("355", "Asignaciones Familiares"),
+    "ART": ("356", "ART"),
+    "SEG_VIDA": ("357", "Seguro de Vida"),
+}
+
+
+@router.get("/periods/{pid}/libro-sueldos-txt")
+def export_libro_sueldos(pid: int, db: Session = Depends(get_db)):
+    """Export Libro de Sueldos Digital in TXT format for AFIP upload."""
+    period = db.query(PayrollPeriod).filter(PayrollPeriod.id == pid).first()
+    if not period:
+        raise HTTPException(404, "Period not found")
+
+    slips = db.query(PayrollSlip).options(
+        joinedload(PayrollSlip.employee),
+        joinedload(PayrollSlip.items),
+    ).filter(PayrollSlip.period_id == pid).all()
+
+    lines = []
+    for s in slips:
+        emp = s.employee
+        if not emp:
+            continue
+        cuil = (emp.cuil or "").replace("-", "")
+
+        for item in sorted(s.items, key=lambda x: x.sort_order or 0):
+            afip_code, afip_name = AFIP_CONCEPT_MAP.get(item.concept_code or "", ("999", item.concept_name or "Otro"))
+            dc = "D" if item.type == "deduccion" else "C"
+            amt = f"{float(item.amount or 0):.2f}"
+            # Format: CUIL|CodAFIP|Concepto|Cantidad|Unidad|Importe|D/C
+            line = f"{cuil}|{afip_code}|{afip_name}|1|MONTO|{amt}|{dc}"
+            lines.append(line)
+
+    content = "\n".join(lines)
+    period_desc = f"{period.month:02d}_{period.year}"
+    return Response(
+        content=content,
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="libro_sueldos_{period_desc}.txt"'}
+    )
+
+
+# ─── Salary Status Dashboard ──────────────────────────────────────
+
+@router.get("/salary-status")
+def salary_status(year: Optional[int] = None, db: Session = Depends(get_db)):
+    """Get salary status overview for dashboard."""
+    y = year or date.today().year
+    periods = db.query(PayrollPeriod).options(
+        joinedload(PayrollPeriod.slips).joinedload(PayrollSlip.employee),
+    ).filter(PayrollPeriod.year == y).order_by(PayrollPeriod.month).all()
+
+    result = []
+    for p in periods:
+        total_bruto = sum(float(s.gross_salary or 0) for s in p.slips)
+        total_neto = sum(float(s.net_salary or 0) for s in p.slips)
+        total_patronal = sum(float(s.total_employer_cost or 0) for s in p.slips)
+        sig_stats = {"pending": 0, "sent": 0, "signed": 0, "rejected": 0}
+        for s in p.slips:
+            status = getattr(s, 'signature_status', 'pending') or 'pending'
+            sig_stats[status] = sig_stats.get(status, 0) + 1
+        result.append({
+            "period_id": p.id,
+            "month": p.month,
+            "month_name": MONTH_NAMES[p.month] if 1 <= p.month <= 12 else str(p.month),
+            "year": p.year,
+            "status": p.status,
+            "slip_count": len(p.slips),
+            "total_bruto": round(total_bruto, 2),
+            "total_neto": round(total_neto, 2),
+            "total_patronal": round(total_patronal, 2),
+            "signature_stats": sig_stats,
+        })
+    return result
