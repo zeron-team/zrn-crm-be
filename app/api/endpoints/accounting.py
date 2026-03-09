@@ -1,5 +1,7 @@
-"""Accounting module — CRUD for periods, entries, tax obligations, and dashboard."""
-from typing import Optional, List
+"""Accounting module — Periods, entries, tax obligations, and dashboard.
+All accounting belongs to the company itself (from CompanySettings), not clients.
+"""
+from typing import Optional
 from datetime import datetime, date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -8,11 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.accounting import AccountingPeriod, AccountingEntry, TaxObligation
-from app.models.client import Client
-from app.models.user import User
 from app.models.company_settings import CompanySettings
 from app.models.invoice import Invoice
 from app.models.purchase_order import PurchaseOrder
+from app.models.user import User
 from app.api.endpoints.auth import get_current_user
 
 router = APIRouter(prefix="/accounting", tags=["accounting"])
@@ -23,7 +24,6 @@ router = APIRouter(prefix="/accounting", tags=["accounting"])
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class PeriodCreate(BaseModel):
-    client_id: int
     month: int
     year: int
     notes: Optional[str] = None
@@ -55,7 +55,6 @@ class EntryUpdate(BaseModel):
     notes: Optional[str] = None
 
 class ObligationCreate(BaseModel):
-    client_id: int
     tax_type: str
     period_month: Optional[int] = None
     period_year: int
@@ -94,13 +93,32 @@ def recalc_period(db: Session, period: AccountingPeriod):
     period.total_percepciones = cats.get("percepcion", 0)
     db.commit()
 
+def get_company(db: Session):
+    """Return company settings or empty dict."""
+    s = db.query(CompanySettings).first()
+    if not s:
+        return {}
+    return {
+        "company_name": s.company_name or "Mi Empresa",
+        "fantasy_name": s.fantasy_name,
+        "cuit": s.cuit,
+        "logo_url": s.logo_url,
+        "legal_name": s.legal_name,
+        "address": s.address,
+        "city": s.city,
+        "province": s.province,
+        "country": s.country,
+        "phone": s.phone,
+        "email": s.email,
+        "iva_condition": s.iva_condition,
+        "default_currency": getattr(s, "default_currency", "ARS") or "ARS",
+        "timezone": getattr(s, "timezone", "America/Argentina/Buenos_Aires"),
+    }
+
 def period_to_dict(p: AccountingPeriod, db: Session):
-    client = db.query(Client).get(p.client_id) if p.client_id else None
     creator = db.query(User).get(p.created_by) if p.created_by else None
     return {
         "id": p.id,
-        "client_id": p.client_id,
-        "client_name": client.name if client else None,
         "month": p.month,
         "month_name": MONTH_NAMES[p.month] if 1 <= p.month <= 12 else str(p.month),
         "year": p.year,
@@ -128,11 +146,9 @@ def entry_to_dict(e: AccountingEntry):
         "notes": e.notes, "created_at": e.created_at.isoformat() if e.created_at else None,
     }
 
-def obligation_to_dict(o: TaxObligation, db: Session):
-    client = db.query(Client).get(o.client_id) if o.client_id else None
+def obligation_to_dict(o: TaxObligation):
     return {
-        "id": o.id, "client_id": o.client_id,
-        "client_name": client.name if client else None,
+        "id": o.id,
         "tax_type": o.tax_type,
         "period_month": o.period_month,
         "period_month_name": MONTH_NAMES[o.period_month] if o.period_month and 1 <= o.period_month <= 12 else None,
@@ -148,20 +164,54 @@ def obligation_to_dict(o: TaxObligation, db: Session):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Periods
+#  Company Context
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.get("/company-context")
+def company_context(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Company identity + billing/purchase totals for current year."""
+    today = date.today()
+    year = today.year
+
+    ventas_q = db.query(
+        func.count(Invoice.id).label("count"),
+        func.coalesce(func.sum(Invoice.amount), 0).label("total"),
+        func.coalesce(func.sum(Invoice.imp_neto), 0).label("neto"),
+        func.coalesce(func.sum(Invoice.imp_iva), 0).label("iva"),
+    ).filter(Invoice.type == "created", extract("year", Invoice.issue_date) == year).first()
+
+    compras_q = db.query(
+        func.count(PurchaseOrder.id).label("count"),
+        func.coalesce(func.sum(PurchaseOrder.total_amount), 0).label("total"),
+    ).filter(extract("year", PurchaseOrder.created_at) == year).first()
+
+    recibidas_q = db.query(
+        func.count(Invoice.id).label("count"),
+        func.coalesce(func.sum(Invoice.amount), 0).label("total"),
+    ).filter(Invoice.type == "received", extract("year", Invoice.issue_date) == year).first()
+
+    return {
+        "company": get_company(db),
+        "year": year,
+        "ventas": {"count": int(ventas_q.count) if ventas_q else 0, "total": float(ventas_q.total) if ventas_q else 0,
+                   "neto": float(ventas_q.neto) if ventas_q else 0, "iva": float(ventas_q.iva) if ventas_q else 0},
+        "compras": {"count": int(compras_q.count) if compras_q else 0, "total": float(compras_q.total) if compras_q else 0},
+        "recibidas": {"count": int(recibidas_q.count) if recibidas_q else 0, "total": float(recibidas_q.total) if recibidas_q else 0},
+    }
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Periods (company-owned, no client selection)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.get("/periods")
 def list_periods(
-    client_id: Optional[int] = Query(None),
     year: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     q = db.query(AccountingPeriod)
-    if client_id:
-        q = q.filter(AccountingPeriod.client_id == client_id)
     if year:
         q = q.filter(AccountingPeriod.year == year)
     if status:
@@ -172,15 +222,13 @@ def list_periods(
 
 @router.post("/periods", status_code=201)
 def create_period(data: PeriodCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    # Check for duplicate
     exists = db.query(AccountingPeriod).filter(
-        AccountingPeriod.client_id == data.client_id,
         AccountingPeriod.month == data.month,
         AccountingPeriod.year == data.year,
     ).first()
     if exists:
-        raise HTTPException(400, f"Ya existe un período {data.month}/{data.year} para esta empresa")
-    period = AccountingPeriod(**data.model_dump(), created_by=current_user.id)
+        raise HTTPException(400, f"Ya existe un período {data.month}/{data.year}")
+    period = AccountingPeriod(month=data.month, year=data.year, notes=data.notes, created_by=current_user.id)
     db.add(period)
     db.commit()
     db.refresh(period)
@@ -291,12 +339,11 @@ def delete_entry(entry_id: int, db: Session = Depends(get_db), current_user=Depe
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Tax Obligations
+#  Tax Obligations (company-owned)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @router.get("/obligations")
 def list_obligations(
-    client_id: Optional[int] = Query(None),
     tax_type: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     year: Optional[int] = Query(None),
@@ -304,8 +351,6 @@ def list_obligations(
     current_user=Depends(get_current_user),
 ):
     q = db.query(TaxObligation)
-    if client_id:
-        q = q.filter(TaxObligation.client_id == client_id)
     if tax_type:
         q = q.filter(TaxObligation.tax_type == tax_type)
     if status:
@@ -313,7 +358,7 @@ def list_obligations(
     if year:
         q = q.filter(TaxObligation.period_year == year)
     obls = q.order_by(desc(TaxObligation.due_date)).all()
-    return [obligation_to_dict(o, db) for o in obls]
+    return [obligation_to_dict(o) for o in obls]
 
 
 @router.post("/obligations", status_code=201)
@@ -322,7 +367,7 @@ def create_obligation(data: ObligationCreate, db: Session = Depends(get_db), cur
     db.add(obl)
     db.commit()
     db.refresh(obl)
-    return obligation_to_dict(obl, db)
+    return obligation_to_dict(obl)
 
 
 @router.put("/obligations/{obl_id}")
@@ -334,7 +379,7 @@ def update_obligation(obl_id: int, data: ObligationUpdate, db: Session = Depends
         setattr(obl, k, v)
     db.commit()
     db.refresh(obl)
-    return obligation_to_dict(obl, db)
+    return obligation_to_dict(obl)
 
 
 @router.delete("/obligations/{obl_id}")
@@ -357,7 +402,7 @@ def upcoming_obligations(days: int = Query(30), db: Session = Depends(get_db), c
         TaxObligation.due_date <= end,
         TaxObligation.status.in_(["pending", "overdue"]),
     ).order_by(TaxObligation.due_date).all()
-    return [obligation_to_dict(o, db) for o in obls]
+    return [obligation_to_dict(o) for o in obls]
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -380,7 +425,7 @@ def accounting_dashboard(db: Session = Depends(get_db), current_user=Depends(get
         TaxObligation.due_date < today,
     ).count()
 
-    # Update overdue status
+    # Auto-update overdue
     db.query(TaxObligation).filter(
         TaxObligation.status == "pending",
         TaxObligation.due_date < today,
@@ -393,110 +438,29 @@ def accounting_dashboard(db: Session = Depends(get_db), current_user=Depends(get
         TaxObligation.status.in_(["pending"]),
     ).order_by(TaxObligation.due_date).limit(10).all()
 
-    # Totals per client for current year
-    client_totals = db.query(
-        AccountingPeriod.client_id,
+    # Monthly breakdown for current year
+    monthly = db.query(
+        AccountingPeriod.month,
         func.sum(AccountingPeriod.total_ingresos).label("ingresos"),
         func.sum(AccountingPeriod.total_egresos).label("egresos"),
         func.sum(AccountingPeriod.total_impuestos).label("impuestos"),
-    ).filter(AccountingPeriod.year == today.year).group_by(AccountingPeriod.client_id).all()
+    ).filter(AccountingPeriod.year == today.year).group_by(AccountingPeriod.month).order_by(AccountingPeriod.month).all()
 
-    client_summary = []
-    for ct in client_totals:
-        cl = db.query(Client).get(ct.client_id)
-        client_summary.append({
-            "client_id": ct.client_id,
-            "client_name": cl.name if cl else "—",
-            "ingresos": float(ct.ingresos or 0),
-            "egresos": float(ct.egresos or 0),
-            "impuestos": float(ct.impuestos or 0),
-        })
+    monthly_breakdown = [
+        {"month": m.month, "month_name": MONTH_NAMES[m.month] if 1 <= m.month <= 12 else str(m.month),
+         "ingresos": float(m.ingresos or 0), "egresos": float(m.egresos or 0), "impuestos": float(m.impuestos or 0)}
+        for m in monthly
+    ]
 
     return {
+        "company": get_company(db),
+        "year": today.year,
         "total_periods": total_periods,
         "draft_periods": draft_periods,
         "confirmed_periods": confirmed_periods,
         "filed_periods": filed_periods,
         "pending_obligations": pending_obls,
         "overdue_obligations": overdue_obls,
-        "upcoming_obligations": [obligation_to_dict(o, db) for o in upcoming],
-        "client_summary": client_summary,
-    }
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Company Context (Settings + Billing/Purchases)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-@router.get("/company-context")
-def company_context(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    """Return company identity from Settings + billing/purchase totals for current year."""
-    settings = db.query(CompanySettings).first()
-    today = date.today()
-    year = today.year
-
-    # ── Billing (Ventas) ──
-    ventas_q = db.query(
-        func.count(Invoice.id).label("count"),
-        func.coalesce(func.sum(Invoice.amount), 0).label("total"),
-        func.coalesce(func.sum(Invoice.imp_neto), 0).label("neto"),
-        func.coalesce(func.sum(Invoice.imp_iva), 0).label("iva"),
-    ).filter(
-        Invoice.type == "created",
-        extract("year", Invoice.issue_date) == year,
-    ).first()
-
-    # ── Purchases (Compras) ──
-    compras_q = db.query(
-        func.count(PurchaseOrder.id).label("count"),
-        func.coalesce(func.sum(PurchaseOrder.total_amount), 0).label("total"),
-    ).filter(
-        extract("year", PurchaseOrder.created_at) == year,
-    ).first()
-
-    # ── Invoices received (Comprobantes recibidos) ──
-    recibidas_q = db.query(
-        func.count(Invoice.id).label("count"),
-        func.coalesce(func.sum(Invoice.amount), 0).label("total"),
-    ).filter(
-        Invoice.type == "received",
-        extract("year", Invoice.issue_date) == year,
-    ).first()
-
-    company = {}
-    if settings:
-        company = {
-            "company_name": settings.company_name,
-            "fantasy_name": settings.fantasy_name,
-            "cuit": settings.cuit,
-            "logo_url": settings.logo_url,
-            "legal_name": settings.legal_name,
-            "address": settings.address,
-            "city": settings.city,
-            "province": settings.province,
-            "country": settings.country,
-            "phone": settings.phone,
-            "email": settings.email,
-            "iva_condition": settings.iva_condition,
-            "default_currency": getattr(settings, "default_currency", "ARS") or "ARS",
-            "timezone": getattr(settings, "timezone", "America/Argentina/Buenos_Aires"),
-        }
-
-    return {
-        "company": company,
-        "year": year,
-        "ventas": {
-            "count": int(ventas_q.count) if ventas_q else 0,
-            "total": float(ventas_q.total) if ventas_q else 0,
-            "neto": float(ventas_q.neto) if ventas_q else 0,
-            "iva": float(ventas_q.iva) if ventas_q else 0,
-        },
-        "compras": {
-            "count": int(compras_q.count) if compras_q else 0,
-            "total": float(compras_q.total) if compras_q else 0,
-        },
-        "recibidas": {
-            "count": int(recibidas_q.count) if recibidas_q else 0,
-            "total": float(recibidas_q.total) if recibidas_q else 0,
-        },
+        "upcoming_obligations": [obligation_to_dict(o) for o in upcoming],
+        "monthly_breakdown": monthly_breakdown,
     }

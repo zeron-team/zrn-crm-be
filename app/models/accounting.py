@@ -8,7 +8,7 @@ class AccountingPeriod(Base):
     __tablename__ = "accounting_periods"
 
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
     month = Column(Integer, nullable=False)  # 1-12
     year = Column(Integer, nullable=False)
     status = Column(String(20), default="draft")  # draft, in_review, confirmed, filed
@@ -52,7 +52,7 @@ class TaxObligation(Base):
     __tablename__ = "tax_obligations"
 
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
     tax_type = Column(String(50), nullable=False)  # IVA, IIBB, Ganancias, F931, Monotributo, DDJJ_Annual
     period_month = Column(Integer, nullable=True)
     period_year = Column(Integer, nullable=False)
