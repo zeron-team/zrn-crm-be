@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Date, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -27,6 +27,7 @@ class CalendarEvent(Base):
     call_url = Column(String(500), nullable=True)        # Zoom/Meet/Teams link
     is_recurring = Column(Boolean, default=False)
     recurrence_pattern = Column(String(50), nullable=True)  # daily, weekly, biweekly, monthly
+    recurrence_end_date = Column(Date, nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships

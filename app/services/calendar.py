@@ -10,7 +10,41 @@ from app.models.provider_service import ProviderService
 
 class CalendarEventService:
     def create_event(self, db: Session, event_in: CalendarEventCreate):
-        return calendar_event_repository.create(db, obj_in=event_in)
+        first_event = calendar_event_repository.create(db, obj_in=event_in)
+
+        # Generate recurring copies if applicable
+        if event_in.is_recurring and event_in.recurrence_pattern and event_in.recurrence_end_date:
+            from dateutil.relativedelta import relativedelta
+            from copy import deepcopy
+
+            pattern = event_in.recurrence_pattern
+            end_limit = event_in.recurrence_end_date  # date object
+            
+            orig_start = event_in.start_date  # datetime
+            orig_end = event_in.end_date      # datetime
+            duration = orig_end - orig_start
+
+            deltas = {
+                "daily": relativedelta(days=1),
+                "weekly": relativedelta(weeks=1),
+                "biweekly": relativedelta(weeks=2),
+                "monthly": relativedelta(months=1),
+            }
+            delta = deltas.get(pattern)
+            if delta:
+                current_start = orig_start + delta
+                max_occurrences = 365  # safety limit
+                count = 0
+                while current_start.date() <= end_limit and count < max_occurrences:
+                    clone_data = event_in.model_copy()
+                    clone_data.start_date = current_start
+                    clone_data.end_date = current_start + duration
+                    clone_data.parent_event_id = first_event.id
+                    calendar_event_repository.create(db, obj_in=clone_data)
+                    current_start = current_start + delta
+                    count += 1
+
+        return first_event
 
     def get_event(self, db: Session, event_id: int):
         event = calendar_event_repository.get(db, id=event_id)
@@ -65,6 +99,7 @@ class CalendarEventService:
                     call_url = None
                     is_recurring = False
                     recurrence_pattern = None
+                    recurrence_end_date = None
                     project_id = None
                     notes = []
                     

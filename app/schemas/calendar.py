@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 
 class CalendarEventBase(BaseModel):
     title: str
@@ -18,6 +18,7 @@ class CalendarEventBase(BaseModel):
     call_url: Optional[str] = None
     is_recurring: Optional[bool] = False
     recurrence_pattern: Optional[str] = None
+    recurrence_end_date: Optional[date] = None
     project_id: Optional[int] = None
 
 class CalendarEventCreate(CalendarEventBase):
