@@ -17,6 +17,18 @@ from app.api.endpoints.auth import get_current_user
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
+def check_project_access(project: Project, user, db: Session):
+    """Raise 403 if non-admin user is not a member/PM/creator of the project."""
+    is_admin = user.role and "admin" in user.role
+    if is_admin:
+        return
+    is_member = db.query(ProjectMember).filter(
+        ProjectMember.project_id == project.id, ProjectMember.user_id == user.id
+    ).first()
+    if not is_member and project.pm_id != user.id and project.created_by != user.id:
+        raise HTTPException(403, "No tenés acceso a este proyecto")
+
+
 # ══════════════════════════════════════
 #  Schemas
 # ══════════════════════════════════════
@@ -142,12 +154,23 @@ def task_to_dict(t: Task, db: Session, depth: int = 0) -> dict:
 # ══════════════════════════════════════
 
 @router.get("")
-def list_projects(status: Optional[str] = Query(None), client_id: Optional[int] = Query(None), db: Session = Depends(get_db)):
+def list_projects(status: Optional[str] = Query(None), client_id: Optional[int] = Query(None),
+                  db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     q = db.query(Project)
     if status:
         q = q.filter(Project.status == status)
     if client_id:
         q = q.filter(Project.client_id == client_id)
+    # Non-admin users only see projects they're a member of (or PM/creator)
+    is_admin = current_user.role and "admin" in current_user.role
+    if not is_admin:
+        member_project_ids = [m.project_id for m in
+                              db.query(ProjectMember.project_id).filter(ProjectMember.user_id == current_user.id).all()]
+        q = q.filter(
+            (Project.id.in_(member_project_ids)) |
+            (Project.pm_id == current_user.id) |
+            (Project.created_by == current_user.id)
+        )
     projects = q.order_by(desc(Project.updated_at)).all()
     result = []
     for p in projects:
@@ -203,10 +226,11 @@ def create_project(data: ProjectCreate, db: Session = Depends(get_db), current_u
 
 
 @router.get("/{project_id}")
-def get_project(project_id: int, db: Session = Depends(get_db)):
+def get_project(project_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     p = db.query(Project).get(project_id)
     if not p:
         raise HTTPException(404, "Project not found")
+    check_project_access(p, current_user, db)
     pm_name = None
     if p.pm_id:
         pm_user = db.query(User).get(p.pm_id)
@@ -221,10 +245,11 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{project_id}")
-def update_project(project_id: int, data: ProjectUpdate, db: Session = Depends(get_db)):
+def update_project(project_id: int, data: ProjectUpdate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     p = db.query(Project).get(project_id)
     if not p:
         raise HTTPException(404, "Project not found")
+    check_project_access(p, current_user, db)
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(p, k, v)
     p.updated_at = datetime.now(timezone.utc)
@@ -234,10 +259,11 @@ def update_project(project_id: int, data: ProjectUpdate, db: Session = Depends(g
 
 
 @router.delete("/{project_id}")
-def delete_project(project_id: int, db: Session = Depends(get_db)):
+def delete_project(project_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     p = db.query(Project).get(project_id)
     if not p:
         raise HTTPException(404, "Project not found")
+    check_project_access(p, current_user, db)
     db.delete(p)
     db.commit()
     return {"ok": True}
