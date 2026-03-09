@@ -13,10 +13,12 @@ logger = logging.getLogger(__name__)
 
 try:
     import rust_core as _rc
+    if not hasattr(_rc, 'encrypt_sensitive'):
+        raise ImportError("rust_core module loaded but missing compiled functions")
     RUST_AVAILABLE = True
-except ImportError:
+except (ImportError, Exception):
     RUST_AVAILABLE = False
-    logger.warning("⚠️ rust_core not available — encryption disabled")
+    logger.warning("⚠️ rust_core not available — encryption will use plaintext fallback")
 
 
 def encrypt(plaintext: str) -> Optional[str]:
