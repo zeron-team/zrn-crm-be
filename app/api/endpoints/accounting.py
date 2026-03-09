@@ -10,6 +10,9 @@ from app.database import get_db
 from app.models.accounting import AccountingPeriod, AccountingEntry, TaxObligation
 from app.models.client import Client
 from app.models.user import User
+from app.models.company_settings import CompanySettings
+from app.models.invoice import Invoice
+from app.models.purchase_order import PurchaseOrder
 from app.api.endpoints.auth import get_current_user
 
 router = APIRouter(prefix="/accounting", tags=["accounting"])
@@ -418,4 +421,82 @@ def accounting_dashboard(db: Session = Depends(get_db), current_user=Depends(get
         "overdue_obligations": overdue_obls,
         "upcoming_obligations": [obligation_to_dict(o, db) for o in upcoming],
         "client_summary": client_summary,
+    }
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Company Context (Settings + Billing/Purchases)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.get("/company-context")
+def company_context(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Return company identity from Settings + billing/purchase totals for current year."""
+    settings = db.query(CompanySettings).first()
+    today = date.today()
+    year = today.year
+
+    # ── Billing (Ventas) ──
+    ventas_q = db.query(
+        func.count(Invoice.id).label("count"),
+        func.coalesce(func.sum(Invoice.amount), 0).label("total"),
+        func.coalesce(func.sum(Invoice.imp_neto), 0).label("neto"),
+        func.coalesce(func.sum(Invoice.imp_iva), 0).label("iva"),
+    ).filter(
+        Invoice.type == "created",
+        extract("year", Invoice.issue_date) == year,
+    ).first()
+
+    # ── Purchases (Compras) ──
+    compras_q = db.query(
+        func.count(PurchaseOrder.id).label("count"),
+        func.coalesce(func.sum(PurchaseOrder.total_amount), 0).label("total"),
+    ).filter(
+        extract("year", PurchaseOrder.created_at) == year,
+    ).first()
+
+    # ── Invoices received (Comprobantes recibidos) ──
+    recibidas_q = db.query(
+        func.count(Invoice.id).label("count"),
+        func.coalesce(func.sum(Invoice.amount), 0).label("total"),
+    ).filter(
+        Invoice.type == "received",
+        extract("year", Invoice.issue_date) == year,
+    ).first()
+
+    company = {}
+    if settings:
+        company = {
+            "company_name": settings.company_name,
+            "fantasy_name": settings.fantasy_name,
+            "cuit": settings.cuit,
+            "logo_url": settings.logo_url,
+            "legal_name": settings.legal_name,
+            "address": settings.address,
+            "city": settings.city,
+            "province": settings.province,
+            "country": settings.country,
+            "phone": settings.phone,
+            "email": settings.email,
+            "iva_condition": settings.iva_condition,
+            "default_currency": getattr(settings, "default_currency", "ARS") or "ARS",
+            "timezone": getattr(settings, "timezone", "America/Argentina/Buenos_Aires"),
+        }
+
+    return {
+        "company": company,
+        "year": year,
+        "ventas": {
+            "count": int(ventas_q.count) if ventas_q else 0,
+            "total": float(ventas_q.total) if ventas_q else 0,
+            "neto": float(ventas_q.neto) if ventas_q else 0,
+            "iva": float(ventas_q.iva) if ventas_q else 0,
+        },
+        "compras": {
+            "count": int(compras_q.count) if compras_q else 0,
+            "total": float(compras_q.total) if compras_q else 0,
+        },
+        "recibidas": {
+            "count": int(recibidas_q.count) if recibidas_q else 0,
+            "total": float(recibidas_q.total) if recibidas_q else 0,
+        },
     }
