@@ -43,6 +43,14 @@ class CompanySettings(Base):
     legal_name = Column(String, nullable=True)                        # Razón social
     fantasy_name = Column(String, nullable=True)                      # Nombre de fantasía
 
+    # ── Zona Horaria ──
+    timezone = Column(String, nullable=True, default="America/Argentina/Buenos_Aires")
+
+    # ── Monedas ──
+    default_currency = Column(String, nullable=True, default="ARS")
+    secondary_currency = Column(String, nullable=True, default="USD")
+    tertiary_currency = Column(String, nullable=True)
+
     # ── Meta ──
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
