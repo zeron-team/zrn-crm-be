@@ -53,7 +53,7 @@ class ProjectUpdate(BaseModel):
 
 class MemberCreate(BaseModel):
     user_id: int
-    role: str = "member"
+    role: str = "member"  # owner, admin, member, viewer
 
 class VersionCreate(BaseModel):
     name: str
@@ -275,7 +275,19 @@ def delete_project(project_id: int, db: Session = Depends(get_db), current_user=
 
 @router.get("/{project_id}/members")
 def list_members(project_id: int, db: Session = Depends(get_db)):
-    return db.query(ProjectMember).filter(ProjectMember.project_id == project_id).all()
+    members = db.query(ProjectMember).filter(ProjectMember.project_id == project_id).all()
+    result = []
+    for m in members:
+        u = db.query(User).get(m.user_id)
+        result.append({
+            "id": m.id,
+            "user_id": m.user_id,
+            "role": m.role,
+            "full_name": u.full_name if u else "Usuario eliminado",
+            "email": u.email if u else "",
+            "is_active": u.is_active if u else False,
+        })
+    return result
 
 
 @router.post("/{project_id}/members", status_code=201)
@@ -287,12 +299,18 @@ def add_member(project_id: int, data: MemberCreate, db: Session = Depends(get_db
         existing.role = data.role
         db.commit()
         db.refresh(existing)
-        return existing
+        u = db.query(User).get(existing.user_id)
+        return {"id": existing.id, "user_id": existing.user_id, "role": existing.role,
+                "full_name": u.full_name if u else "", "email": u.email if u else "",
+                "is_active": u.is_active if u else False}
     m = ProjectMember(project_id=project_id, **data.model_dump())
     db.add(m)
     db.commit()
     db.refresh(m)
-    return m
+    u = db.query(User).get(m.user_id)
+    return {"id": m.id, "user_id": m.user_id, "role": m.role,
+            "full_name": u.full_name if u else "", "email": u.email if u else "",
+            "is_active": u.is_active if u else False}
 
 
 @router.delete("/{project_id}/members/{member_id}")
