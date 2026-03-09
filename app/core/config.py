@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     DATABASE_URL: str = "postgresql://zeron_user:zeron_password@localhost:5432/zeron_crm"
     SECRET_KEY: str = "ET5aLUQreKBGJNiPfJf8QO76UGNw3_gNa1zfGoxVIW3WT1za64D0eMdYWuelOSjM"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
     REDIS_URL: str = "redis://localhost:6379/0"
