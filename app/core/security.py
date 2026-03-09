@@ -17,11 +17,15 @@ logger = logging.getLogger(__name__)
 # Try to import Rust module; fall back to Python if not available
 try:
     import rust_core as _rc
+    # Verify the compiled Rust functions are actually available
+    # (the rust_core/ directory can import as a Python package without them)
+    if not hasattr(_rc, 'verify_password'):
+        raise ImportError("rust_core module loaded but missing compiled functions")
     RUST_AVAILABLE = True
     logger.info("🦀 rust_core loaded — using Rust crypto (Argon2id + native JWT)")
-except ImportError:
+except (ImportError, Exception) as e:
     RUST_AVAILABLE = False
-    logger.warning("⚠️ rust_core not available — falling back to Python crypto")
+    logger.warning(f"⚠️ rust_core not available — falling back to Python crypto ({e})")
     from passlib.context import CryptContext
     from jose import JWTError, jwt
     _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
