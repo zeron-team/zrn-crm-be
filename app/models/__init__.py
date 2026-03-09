@@ -34,3 +34,4 @@ from app.models.employee import Employee
 from app.models.time_entry import TimeEntry
 from app.models.role_config import RoleConfig
 from app.models.payroll import PayrollConcept, PayrollPeriod, PayrollSlip, PayrollSlipItem
+from app.models.chat_history import ChatMessage

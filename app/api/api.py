@@ -14,6 +14,9 @@ from app.api.endpoints import time_entries
 from app.api.endpoints import role_configs
 from app.api.endpoints import payroll
 from app.api.endpoints import company_settings
+from app.api.endpoints import ai_chat
+from app.api.endpoints import audit
+from app.api.endpoints import system as system_status
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -53,5 +56,8 @@ api_router.include_router(time_entries.router)
 api_router.include_router(role_configs.router)
 api_router.include_router(payroll.router)
 api_router.include_router(company_settings.router)
+api_router.include_router(ai_chat.router, prefix="/ai", tags=["ai"])
+api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
+api_router.include_router(system_status.router, prefix="/system", tags=["system"])
 
 
