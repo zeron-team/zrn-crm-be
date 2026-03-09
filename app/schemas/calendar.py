@@ -15,6 +15,10 @@ class CalendarEventBase(BaseModel):
     status: Optional[str] = "pending"
     status_reason: Optional[str] = None
     parent_event_id: Optional[int] = None
+    call_url: Optional[str] = None
+    is_recurring: Optional[bool] = False
+    recurrence_pattern: Optional[str] = None
+    project_id: Optional[int] = None
 
 class CalendarEventCreate(CalendarEventBase):
     pass

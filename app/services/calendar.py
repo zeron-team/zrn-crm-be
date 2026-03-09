@@ -62,6 +62,10 @@ class CalendarEventService:
                     status = "pending"
                     status_reason = None
                     parent_event_id = None
+                    call_url = None
+                    is_recurring = False
+                    recurrence_pattern = None
+                    project_id = None
                     notes = []
                     
                 events_list.append(VirtualEvent())

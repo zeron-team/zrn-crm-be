@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -23,6 +23,13 @@ class CalendarEvent(Base):
     # Follow-up chain
     parent_event_id = Column(Integer, ForeignKey("calendar_events.id", ondelete="SET NULL"), nullable=True)
 
+    # Call fields
+    call_url = Column(String(500), nullable=True)        # Zoom/Meet/Teams link
+    is_recurring = Column(Boolean, default=False)
+    recurrence_pattern = Column(String(50), nullable=True)  # daily, weekly, biweekly, monthly
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+
     # Relationships
     notes = relationship("ActivityNote", back_populates="event", cascade="all, delete-orphan", order_by="ActivityNote.created_at.desc()")
     follow_ups = relationship("CalendarEvent", backref="parent_event", remote_side=[id])
+    project = relationship("Project", backref="calendar_events")
