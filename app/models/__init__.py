@@ -37,3 +37,4 @@ from app.models.payroll import PayrollConcept, PayrollPeriod, PayrollSlip, Payro
 from app.models.chat_history import ChatMessage
 from app.models.audit_log import AuditLog
 from app.models.installed_module import InstalledModule
+from app.models.accounting import AccountingPeriod, AccountingEntry, TaxObligation
