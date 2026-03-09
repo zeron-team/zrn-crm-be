@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from app.repositories.calendar import calendar_event_repository
 from app.schemas.calendar import CalendarEventCreate, CalendarEventUpdate
-from sqlalchemy.orm import Session
+from app.models.calendar import CalendarEvent
 from datetime import datetime, time, date
 import calendar
 from typing import List
@@ -111,7 +111,61 @@ class CalendarEventService:
         event = calendar_event_repository.get(db, id=event_id)
         if not event:
             raise HTTPException(status_code=404, detail="Event not found")
-        return calendar_event_repository.update(db, db_obj=event, obj_in=event_in)
+        updated = calendar_event_repository.update(db, db_obj=event, obj_in=event_in)
+
+        # Handle recurrence on update
+        if event_in.is_recurring and event_in.recurrence_pattern and event_in.recurrence_end_date:
+            from dateutil.relativedelta import relativedelta
+
+            # Remove old child events for this parent
+            db.query(CalendarEvent).filter(
+                CalendarEvent.parent_event_id == event_id
+            ).delete(synchronize_session=False)
+            db.commit()
+
+            pattern = event_in.recurrence_pattern
+            end_limit = event_in.recurrence_end_date
+
+            orig_start = updated.start_date
+            orig_end = updated.end_date
+            duration = orig_end - orig_start
+
+            deltas = {
+                "daily": relativedelta(days=1),
+                "weekly": relativedelta(weeks=1),
+                "biweekly": relativedelta(weeks=2),
+                "monthly": relativedelta(months=1),
+            }
+            delta = deltas.get(pattern)
+            if delta:
+                current_start = orig_start + delta
+                max_occurrences = 365
+                count = 0
+                while current_start.date() <= end_limit and count < max_occurrences:
+                    child = CalendarEvent(
+                        title=updated.title,
+                        description=updated.description,
+                        start_date=current_start,
+                        end_date=current_start + duration,
+                        related_to=updated.related_to,
+                        color=updated.color,
+                        client_id=updated.client_id,
+                        contact_id=updated.contact_id,
+                        lead_id=updated.lead_id,
+                        status="pending",
+                        call_url=updated.call_url,
+                        is_recurring=False,
+                        recurrence_pattern=None,
+                        recurrence_end_date=None,
+                        project_id=updated.project_id,
+                        parent_event_id=event_id,
+                    )
+                    db.add(child)
+                    current_start = current_start + delta
+                    count += 1
+                db.commit()
+
+        return updated
 
     def delete_event(self, db: Session, event_id: int):
         event = calendar_event_repository.get(db, id=event_id)
