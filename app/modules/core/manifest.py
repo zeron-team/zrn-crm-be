@@ -6,7 +6,7 @@ from app.modules import ModuleManifest
 
 
 def register(registry):
-    from app.api.endpoints import auth, users, dashboard_config, notes, calendar, ai_chat, dashboards
+    from app.api.endpoints import auth, users, dashboard_config, notes, calendar, ai_chat, dashboards, profile
 
     manifest = ModuleManifest(
         name="Principal",
@@ -18,6 +18,7 @@ def register(registry):
         dependencies=[],
         routes=[
             (auth.router, "/auth", ["auth"]),
+            (profile.router, "/profile", ["profile"]),
             (users.router, "/users", ["users"]),
             (dashboard_config.router, "/dashboard-config", ["dashboard_config"]),
             (notes.router, "", ["notes"]),
