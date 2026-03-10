@@ -11,7 +11,7 @@ from app.api.endpoints.auth import get_current_user
 
 router = APIRouter(prefix="/company-settings", tags=["company_settings"])
 
-UPLOAD_DIR = "/var/www/html/zeron-crm/uploads"
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "uploads")
 
 
 class CompanySettingsUpdate(BaseModel):
@@ -151,7 +151,8 @@ async def upload_logo(
     settings = get_or_create(db)
     # Delete old logo if exists
     if settings.logo_url:
-        old_path = os.path.join("/var/www/html/zeron-crm", settings.logo_url.lstrip("/"))
+        old_name = os.path.basename(settings.logo_url)
+        old_path = os.path.join(UPLOAD_DIR, old_name)
         if os.path.exists(old_path):
             try:
                 os.remove(old_path)
