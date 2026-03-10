@@ -157,6 +157,34 @@ class ModuleRegistry:
         result = []
         for slug in self._load_order or sorted(self._modules.keys()):
             m = self._modules[slug]
+            # Extract detailed route info
+            routes_detail = []
+            for router, prefix, tags in m.routes:
+                endpoints = []
+                for route in router.routes:
+                    methods = list(getattr(route, "methods", set()))
+                    path = getattr(route, "path", "")
+                    name = getattr(route, "name", "")
+                    endpoints.append({
+                        "path": f"{prefix}{path}",
+                        "methods": methods,
+                        "name": name,
+                    })
+                routes_detail.append({
+                    "prefix": prefix,
+                    "tags": tags,
+                    "endpoints": endpoints,
+                })
+            # Dependency verification
+            deps_status = []
+            for dep in m.dependencies:
+                dep_mod = self._modules.get(dep)
+                deps_status.append({
+                    "slug": dep,
+                    "name": dep_mod.name if dep_mod else dep,
+                    "found": dep in self._modules,
+                    "enabled": dep_mod.enabled if dep_mod else False,
+                })
             result.append({
                 "slug": m.slug,
                 "name": m.name,
@@ -166,6 +194,8 @@ class ModuleRegistry:
                 "category": m.category,
                 "enabled": m.enabled,
                 "dependencies": m.dependencies,
-                "routes_count": len(m.routes),
+                "dependencies_status": deps_status,
+                "routes_count": sum(len(rd["endpoints"]) for rd in routes_detail),
+                "routes_detail": routes_detail,
             })
         return result
