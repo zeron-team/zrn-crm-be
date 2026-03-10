@@ -178,7 +178,7 @@ def company_context(db: Session = Depends(get_db), current_user=Depends(get_curr
         func.coalesce(func.sum(Invoice.amount), 0).label("total"),
         func.coalesce(func.sum(Invoice.imp_neto), 0).label("neto"),
         func.coalesce(func.sum(Invoice.imp_iva), 0).label("iva"),
-    ).filter(Invoice.type == "created", extract("year", Invoice.issue_date) == year).first()
+    ).filter(Invoice.type == "issued", extract("year", Invoice.issue_date) == year).first()
 
     compras_q = db.query(
         func.count(PurchaseOrder.id).label("count"),
