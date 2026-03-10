@@ -692,6 +692,7 @@ def get_module_info(
                 "exchange_rates", "service_payments", "provider_services", "providers"],
         "catalog": ["products", "categories", "families", "subcategories"],
         "system": ["audit_logs", "role_configs", "company_settings", "installed_modules"],
+        "accounting": ["accounting_periods", "accounting_entries", "accounting_obligations"],
     }
 
     tables = MODULE_TABLES.get(slug, [])
