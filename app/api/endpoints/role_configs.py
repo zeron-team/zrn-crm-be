@@ -12,6 +12,7 @@ AVAILABLE_PAGES = [
     {"path": "/", "label": "Panel de Control", "group": "Principal"},
     {"path": "/dashboards", "label": "Dashboards", "group": "Principal"},
     {"path": "/notes", "label": "Notas", "group": "Principal"},
+    {"path": "/news-manage", "label": "Gestión de Noticias", "group": "Principal"},
     {"path": "/leads", "label": "Prospectos", "group": "CRM"},
     {"path": "/quotes", "label": "Presupuestos", "group": "CRM"},
     {"path": "/clients", "label": "Cuentas", "group": "CRM"},

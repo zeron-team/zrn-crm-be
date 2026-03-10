@@ -12,6 +12,8 @@ class News(Base):
     category = Column(String, default="General", index=True)
     image_url = Column(String, nullable=True)
     is_pinned = Column(Boolean, default=False)
+    status = Column(String, default="draft", index=True)      # draft, published, archived
+    priority = Column(String, default="normal")                # normal, important, urgent
     author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

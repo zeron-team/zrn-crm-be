@@ -9,6 +9,8 @@ class NewsBase(BaseModel):
     category: str = "General"
     image_url: Optional[str] = None
     is_pinned: bool = False
+    status: str = "draft"       # draft, published, archived
+    priority: str = "normal"    # normal, important, urgent
 
 
 class NewsCreate(NewsBase):
@@ -21,6 +23,8 @@ class NewsUpdate(BaseModel):
     category: Optional[str] = None
     image_url: Optional[str] = None
     is_pinned: Optional[bool] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
 
 
 class NewsAuthor(BaseModel):

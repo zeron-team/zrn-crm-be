@@ -1,5 +1,7 @@
 """
 Company News / Announcements endpoints.
+Permission: users with '/news-manage' in their role's allowed_pages can create/edit/delete.
+Non-managers only see 'published' news.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
@@ -10,6 +12,7 @@ import os, uuid
 from app.database import get_db
 from app.models.news import News, NewsDismissal
 from app.models.user import User
+from app.models.role_config import RoleConfig
 from app.schemas.news import NewsCreate, NewsUpdate, NewsResponse
 from app.api.endpoints.auth import get_current_user
 
@@ -18,31 +21,68 @@ router = APIRouter(prefix="/news", tags=["news"])
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "uploads")
 NEWS_IMG_DIR = os.path.join(UPLOAD_DIR, "news")
 
-# Current app version for welcome modal dismissal
 CURRENT_VERSION = "6.1.0"
 
+
+def _can_manage_news(user: User, db: Session) -> bool:
+    """Check if user's role has '/news-manage' in allowed_pages."""
+    if "superadmin" in (user.role or ""):
+        return True
+    roles = [r.strip() for r in (user.role or "").split(",") if r.strip()]
+    for role_name in roles:
+        rc = db.query(RoleConfig).filter(RoleConfig.role_name == role_name).first()
+        if rc and "/news-manage" in (rc.allowed_pages or []):
+            return True
+    return False
+
+
+def _require_news_manager(user: User, db: Session):
+    if not _can_manage_news(user, db):
+        raise HTTPException(status_code=403, detail="No tenés permiso para gestionar noticias. Contactá al administrador.")
+
+
+# ─── Public endpoints ──────────────────────────────────────
 
 @router.get("/", response_model=List[NewsResponse])
 def list_news(
     category: Optional[str] = None,
+    status: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """List news articles. Pinned first, then by date descending."""
+    """List news. Managers see all statuses; others only 'published'."""
     q = db.query(News)
+    is_manager = _can_manage_news(current_user, db)
+
+    if status and is_manager:
+        q = q.filter(News.status == status)
+    elif not is_manager:
+        q = q.filter(News.status == "published")
+
     if category:
         q = q.filter(News.category == category)
+
     q = q.order_by(desc(News.is_pinned), desc(News.created_at))
     return q.offset(skip).limit(limit).all()
 
 
 @router.get("/categories")
 def list_categories(db: Session = Depends(get_db)):
-    """Return distinct categories used in news."""
     rows = db.query(News.category).distinct().all()
     return [r[0] for r in rows if r[0]]
 
+
+@router.get("/can-manage")
+def check_can_manage(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return {"can_manage": _can_manage_news(current_user, db)}
+
+
+# ─── Manager endpoints ─────────────────────────────────────
 
 @router.post("/", response_model=NewsResponse)
 def create_news(
@@ -50,10 +90,7 @@ def create_news(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a news article (admin/superadmin only)."""
-    role = current_user.role or ""
-    if "admin" not in role and "superadmin" not in role:
-        raise HTTPException(status_code=403, detail="Solo administradores pueden publicar noticias")
+    _require_news_manager(current_user, db)
     news = News(**news_in.model_dump(), author_id=current_user.id)
     db.add(news)
     db.commit()
@@ -68,10 +105,7 @@ def update_news(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update a news article."""
-    role = current_user.role or ""
-    if "admin" not in role and "superadmin" not in role:
-        raise HTTPException(status_code=403, detail="Solo administradores pueden editar noticias")
+    _require_news_manager(current_user, db)
     news = db.query(News).filter(News.id == news_id).first()
     if not news:
         raise HTTPException(status_code=404, detail="Noticia no encontrada")
@@ -88,14 +122,10 @@ def delete_news(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a news article."""
-    role = current_user.role or ""
-    if "admin" not in role and "superadmin" not in role:
-        raise HTTPException(status_code=403, detail="Solo administradores pueden eliminar noticias")
+    _require_news_manager(current_user, db)
     news = db.query(News).filter(News.id == news_id).first()
     if not news:
         raise HTTPException(status_code=404, detail="Noticia no encontrada")
-    # Delete image if exists
     if news.image_url:
         img_name = news.image_url.split("/")[-1]
         img_path = os.path.join(NEWS_IMG_DIR, img_name)
@@ -113,10 +143,7 @@ async def upload_news_image(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload an image for a news article."""
-    role = current_user.role or ""
-    if "admin" not in role and "superadmin" not in role:
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    _require_news_manager(current_user, db)
     news = db.query(News).filter(News.id == news_id).first()
     if not news:
         raise HTTPException(status_code=404, detail="Noticia no encontrada")
@@ -125,7 +152,6 @@ async def upload_news_image(
 
     os.makedirs(NEWS_IMG_DIR, exist_ok=True)
 
-    # Delete old image
     if news.image_url:
         old_name = news.image_url.split("/")[-1]
         old_path = os.path.join(NEWS_IMG_DIR, old_name)
@@ -146,17 +172,14 @@ async def upload_news_image(
     return {"image_url": news.image_url}
 
 
-# ─── Welcome modal dismiss ─────────────────────────────────
+# ─── Welcome modal ─────────────────────────────────────────
 
 @router.get("/welcome-status")
 def welcome_status(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Check if the welcome modal should be shown for this user."""
-    dismissal = db.query(NewsDismissal).filter(
-        NewsDismissal.user_id == current_user.id
-    ).first()
+    dismissal = db.query(NewsDismissal).filter(NewsDismissal.user_id == current_user.id).first()
     show = not dismissal or dismissal.dismissed_version != CURRENT_VERSION
     return {"show_welcome": show, "current_version": CURRENT_VERSION}
 
@@ -166,10 +189,7 @@ def dismiss_welcome(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Dismiss the welcome modal for this user."""
-    dismissal = db.query(NewsDismissal).filter(
-        NewsDismissal.user_id == current_user.id
-    ).first()
+    dismissal = db.query(NewsDismissal).filter(NewsDismissal.user_id == current_user.id).first()
     if dismissal:
         dismissal.dismissed_version = CURRENT_VERSION
     else:
