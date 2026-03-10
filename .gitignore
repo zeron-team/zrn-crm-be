@@ -38,3 +38,4 @@ uploads/service_payments/*
 # ARCA (ex AFIP) certificates - NEVER commit these
 arca/certs/*.crt
 arca/certs/*.key
+uploads/news/
