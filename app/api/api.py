@@ -20,7 +20,7 @@ from app.api.endpoints import system as system_status
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
-api_router.include_router(users.router, prefix="/users", tags=["users"])
+# users router is registered via core module manifest (app/modules/core/manifest.py)
 api_router.include_router(clients.router, prefix="/clients", tags=["clients"])
 api_router.include_router(providers.router, prefix="/providers", tags=["providers"])
 api_router.include_router(products.router, prefix="/products", tags=["products"])
