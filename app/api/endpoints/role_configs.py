@@ -47,6 +47,13 @@ AVAILABLE_PAGES = [
 # Default role configs seeded on first load
 DEFAULT_ROLES = [
     {
+        "role_name": "superadmin",
+        "display_name": "Super Administrador",
+        "description": "Acceso total + gestión de módulos y licencias",
+        "allowed_pages": [p["path"] for p in AVAILABLE_PAGES],
+        "own_data_only": False,
+    },
+    {
         "role_name": "admin",
         "display_name": "Administrador",
         "description": "Acceso total al sistema",
@@ -139,7 +146,7 @@ def update_role_config(role_name: str, data: RoleConfigUpdate, db: Session = Dep
     return serialize(rc)
 
 
-BUILTIN_ROLES = {'admin', 'user', 'empleado', 'vendedor'}
+BUILTIN_ROLES = {'superadmin', 'admin', 'user', 'empleado', 'vendedor'}
 
 
 @router.post("/")

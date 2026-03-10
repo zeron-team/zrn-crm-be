@@ -18,7 +18,12 @@ ONLINE_THRESHOLD_SECONDS = 120  # 2 minutes
 
 
 @router.post("/", response_model=UserResponse)
-def create_user(user_in: UserCreate, db: Session = Depends(get_db)):
+def create_user(user_in: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Only superadmin can assign superadmin role
+    if "superadmin" in (user_in.role or ""):
+        if "superadmin" not in (current_user.role or ""):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail="Solo un Super Administrador puede asignar el rol superadmin")
     return user_service.create_user(db, user_in=user_in)
 
 @router.get("/", response_model=List[UserResponse])
@@ -69,7 +74,12 @@ def read_user(user_id: int, db: Session = Depends(get_db)):
     return user_service.get_user(db, user_id=user_id)
 
 @router.put("/{user_id}", response_model=UserResponse)
-def update_user(user_id: int, user_in: UserUpdate, db: Session = Depends(get_db)):
+def update_user(user_id: int, user_in: UserUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Only superadmin can assign superadmin role
+    if user_in.role and "superadmin" in user_in.role:
+        if "superadmin" not in (current_user.role or ""):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail="Solo un Super Administrador puede asignar el rol superadmin")
     return user_service.update_user(db, user_id=user_id, user_in=user_in)
 
 @router.delete("/{user_id}", response_model=UserResponse)

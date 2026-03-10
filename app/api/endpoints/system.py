@@ -25,8 +25,8 @@ def list_modules(
 ):
     """List all registered modules with DB state (license, enabled)."""
     from fastapi import HTTPException
-    if "admin" not in (current_user.role or ""):
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if "superadmin" not in (current_user.role or ""):
+        raise HTTPException(status_code=403, detail="Solo super administradores")
 
     from app.models.installed_module import InstalledModule
     registry = getattr(request.app.state, "module_registry", None)
@@ -414,8 +414,8 @@ def toggle_module(
 ):
     """Enable or disable a module."""
     from fastapi import HTTPException
-    if "admin" not in (current_user.role or ""):
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if "superadmin" not in (current_user.role or ""):
+        raise HTTPException(status_code=403, detail="Solo super administradores")
     if slug == "core":
         raise HTTPException(status_code=400, detail="El módulo Principal no se puede desactivar")
 
@@ -450,8 +450,8 @@ def activate_module_license(
 ):
     """Activate a module license by providing a signed license key."""
     from fastapi import HTTPException
-    if "admin" not in (current_user.role or ""):
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if "superadmin" not in (current_user.role or ""):
+        raise HTTPException(status_code=403, detail="Solo super administradores")
 
     from app.models.installed_module import InstalledModule
     from app.modules.licensing import validate_license
@@ -524,8 +524,8 @@ def generate_module_license(
     - **company_cuit**: Company CUIT for license binding
     """
     from fastapi import HTTPException
-    if "admin" not in (current_user.role or ""):
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if "superadmin" not in (current_user.role or ""):
+        raise HTTPException(status_code=403, detail="Solo super administradores")
 
     from app.models.installed_module import InstalledModule
     from app.modules.licensing import generate_license
@@ -581,8 +581,8 @@ def activate_trial(
     - **days**: Trial duration (default 30 days)
     """
     from fastapi import HTTPException
-    if "admin" not in (current_user.role or ""):
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if "superadmin" not in (current_user.role or ""):
+        raise HTTPException(status_code=403, detail="Solo super administradores")
 
     from app.models.installed_module import InstalledModule
     from app.modules.licensing import generate_license
@@ -627,8 +627,8 @@ def check_expirations(
 ):
     """Check all module licenses and mark expired ones."""
     from fastapi import HTTPException
-    if "admin" not in (current_user.role or ""):
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if "superadmin" not in (current_user.role or ""):
+        raise HTTPException(status_code=403, detail="Solo super administradores")
 
     from app.models.installed_module import InstalledModule
     from datetime import datetime
@@ -667,8 +667,8 @@ def get_module_info(
 ):
     """Get detailed info about a specific module, including table row counts."""
     from fastapi import HTTPException
-    if "admin" not in (current_user.role or ""):
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if "superadmin" not in (current_user.role or ""):
+        raise HTTPException(status_code=403, detail="Solo super administradores")
 
     from app.models.installed_module import InstalledModule
     import json as json_lib
@@ -731,8 +731,8 @@ def get_events_info(
 ):
     """Get event bus status and recent events."""
     from fastapi import HTTPException
-    if "admin" not in (current_user.role or ""):
-        raise HTTPException(status_code=403, detail="Solo administradores")
+    if "superadmin" not in (current_user.role or ""):
+        raise HTTPException(status_code=403, detail="Solo super administradores")
 
     event_bus = getattr(request.app.state, "event_bus", None)
     if not event_bus:
