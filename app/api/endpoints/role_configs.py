@@ -24,6 +24,7 @@ AVAILABLE_PAGES = [
     {"path": "/wiki", "label": "Wiki", "group": "Proyectos"},
     {"path": "/employees", "label": "Empleados", "group": "RRHH"},
     {"path": "/time-tracking", "label": "Fichadas", "group": "RRHH"},
+    {"path": "/payroll", "label": "Liquidación de Sueldos", "group": "RRHH"},
     {"path": "/email", "label": "Email", "group": "Comunicaciones"},
     {"path": "/whatsapp", "label": "WhatsApp", "group": "Comunicaciones"},
     {"path": "/billing", "label": "Facturación", "group": "ERP"},
@@ -34,11 +35,13 @@ AVAILABLE_PAGES = [
     {"path": "/inventory", "label": "Inventario", "group": "ERP"},
     {"path": "/warehouses", "label": "Depósitos", "group": "ERP"},
     {"path": "/exchange-rates", "label": "Tipo de Cambio", "group": "ERP"},
+    {"path": "/accounting", "label": "Contabilidad", "group": "Contabilidad"},
     {"path": "/products", "label": "Productos", "group": "Catálogo"},
     {"path": "/categories", "label": "Categorías", "group": "Catálogo"},
     {"path": "/users", "label": "Usuarios", "group": "Sistema"},
-    {"path": "/settings", "label": "Configuración", "group": "Sistema"},
+    {"path": "/settings", "label": "Configuración General", "group": "Sistema"},
     {"path": "/role-permissions", "label": "Roles y Permisos", "group": "Sistema"},
+    {"path": "/module-management", "label": "Gestión de Módulos", "group": "Sistema"},
 ]
 
 # Default role configs seeded on first load
