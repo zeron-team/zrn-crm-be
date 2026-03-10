@@ -6,7 +6,7 @@ from app.modules import ModuleManifest
 
 
 def register(registry):
-    from app.api.endpoints import auth, users, dashboard_config, notes, calendar, ai_chat, dashboards, profile
+    from app.api.endpoints import auth, users, dashboard_config, notes, calendar, ai_chat, dashboards, profile, news
 
     manifest = ModuleManifest(
         name="Principal",
@@ -25,6 +25,7 @@ def register(registry):
             (calendar.router, "/calendar", ["calendar"]),
             (ai_chat.router, "/ai", ["ai"]),
             (dashboards.router, "", ["dashboards"]),
+            (news.router, "", ["news"]),
         ],
     )
     registry.register(manifest)
