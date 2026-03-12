@@ -53,6 +53,7 @@ class ProjectVersion(Base):
     start_date = Column(Date, nullable=True)
     release_date = Column(Date, nullable=True)
     status = Column(String(20), default="planned")  # planned, in_progress, released
+    repository_url = Column(String(500), nullable=True)  # Git repo URL for this version
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     project = relationship("Project", back_populates="versions")

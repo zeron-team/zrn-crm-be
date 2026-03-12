@@ -60,12 +60,14 @@ class VersionCreate(BaseModel):
     description: Optional[str] = None
     start_date: Optional[date] = None
     release_date: Optional[date] = None
+    repository_url: Optional[str] = None
 
 class VersionUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     start_date: Optional[date] = None
     release_date: Optional[date] = None
+    repository_url: Optional[str] = None
     status: Optional[str] = None
 
 class SprintCreate(BaseModel):
@@ -338,6 +340,7 @@ def list_versions(project_id: int, db: Session = Depends(get_db)):
             "start_date": str(v.start_date) if v.start_date else None,
             "release_date": str(v.release_date) if v.release_date else None,
             "status": v.status, "sprint_count": sprint_count,
+            "repository_url": v.repository_url,
             "created_at": v.created_at,
         })
     return result
@@ -729,6 +732,7 @@ def project_summary(project_id: int, db: Session = Depends(get_db)):
             "description": v.description,
             "start_date": str(v.start_date) if v.start_date else None,
             "release_date": str(v.release_date) if v.release_date else None,
+            "repository_url": v.repository_url,
             "sprint_count": len(v_sprints), "sprints": [s["name"] for s in v_sprints],
             "task_count": v_tasks, "done_count": v_done,
             "completion": round(v_done / v_tasks * 100) if v_tasks else 0,
