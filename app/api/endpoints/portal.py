@@ -44,6 +44,9 @@ class PortalTicketCreate(BaseModel):
 class PortalCommentCreate(BaseModel):
     content: str
 
+class PortalTicketStatusUpdate(BaseModel):
+    status: str
+
 class PortalComment(BaseModel):
     id: int
     content: str
@@ -250,3 +253,51 @@ def portal_add_comment(ticket_id: int, body: PortalCommentCreate, client: Client
         comment_type=comment.comment_type,
         created_at=comment.created_at,
     )
+
+
+VALID_STATUSES = {"open", "in_progress", "pending", "resolved", "closed"}
+
+@router.patch("/tickets/{ticket_id}/status", response_model=PortalTicketResponse)
+def portal_update_ticket_status(ticket_id: int, body: PortalTicketStatusUpdate, client: Client = Depends(get_portal_client), db: Session = Depends(get_db)):
+    """Update ticket status (used by Kanban drag & drop)."""
+    if body.status not in VALID_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Estado inválido: {body.status}")
+
+    ticket = db.query(Ticket).filter(
+        Ticket.id == ticket_id,
+        Ticket.client_id == client.id,
+    ).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+
+    old_status = ticket.status
+    if old_status == body.status:
+        return ticket
+
+    ticket.status = body.status
+    if body.status == "closed":
+        ticket.closed_at = datetime.datetime.utcnow()
+
+    # Add audit comment
+    status_labels = {"open": "Abierto", "in_progress": "En Progreso", "pending": "Pendiente", "resolved": "Resuelto", "closed": "Cerrado"}
+    comment = TicketComment(
+        ticket_id=ticket_id,
+        content=f"Estado cambiado: {status_labels.get(old_status, old_status)} → {status_labels.get(body.status, body.status)} (desde Portal)",
+        is_internal=False,
+        comment_type="status_change",
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(ticket)
+
+    # Get assigned agent name
+    agent_name = None
+    if ticket.assigned_to:
+        agent = db.query(User).filter(User.id == ticket.assigned_to).first()
+        if agent:
+            agent_name = agent.full_name
+
+    result = PortalTicketResponse.model_validate(ticket)
+    result.assigned_to_name = agent_name
+    return result
+
