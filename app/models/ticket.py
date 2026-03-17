@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -11,9 +11,13 @@ class Ticket(Base):
     ticket_number = Column(String, unique=True, index=True, nullable=False)
     subject = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    status = Column(String, default="open", index=True)          # open, in_progress, waiting, resolved, closed
+    status = Column(String, default="open", index=True)          # open, in_progress, pending, resolved, closed
     priority = Column(String, default="medium", index=True)      # low, medium, high, critical
     category = Column(String, nullable=True)                     # general, billing, technical, other
+    ticket_type = Column(String(50), nullable=True)              # bug, feature, consultation
+    estimated_hours = Column(Float, nullable=True)               # Hours agent estimates to resolve
+    actual_hours = Column(Float, nullable=True)                  # Actual hours spent resolving
+    estimated_date = Column(DateTime, nullable=True)             # Tentative resolution date
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)

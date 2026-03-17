@@ -40,12 +40,14 @@ class PortalTicketCreate(BaseModel):
     subject: str
     description: str
     priority: str = "medium"
+    ticket_type: str = "consultation"  # bug, feature, consultation
 
 class PortalCommentCreate(BaseModel):
     content: str
 
 class PortalTicketStatusUpdate(BaseModel):
     status: str
+    actual_hours: Optional[float] = None  # Required when resolving
 
 class PortalComment(BaseModel):
     id: int
@@ -64,7 +66,11 @@ class PortalTicketResponse(BaseModel):
     status: str
     priority: str
     category: Optional[str] = None
+    ticket_type: Optional[str] = None
     assigned_to_name: Optional[str] = None
+    estimated_hours: Optional[float] = None
+    actual_hours: Optional[float] = None
+    estimated_date: Optional[datetime.datetime] = None
     created_at: datetime.datetime
     updated_at: Optional[datetime.datetime] = None
     closed_at: Optional[datetime.datetime] = None
@@ -185,6 +191,7 @@ def portal_create_ticket(body: PortalTicketCreate, client: Client = Depends(get_
         description=f"[Portal - {client.name}] {body.description}",
         status="open",
         priority=body.priority if body.priority in ("low", "medium", "high", "critical") else "medium",
+        ticket_type=body.ticket_type if body.ticket_type in ("bug", "feature", "consultation") else "consultation",
         client_id=client.id,
     )
     db.add(ticket)
@@ -275,14 +282,25 @@ def portal_update_ticket_status(ticket_id: int, body: PortalTicketStatusUpdate, 
         return ticket
 
     ticket.status = body.status
+
+    # Record actual hours when resolving or closing
+    if body.status in ("resolved", "closed") and body.actual_hours is not None:
+        ticket.actual_hours = body.actual_hours
+
     if body.status == "closed":
+        ticket.closed_at = datetime.datetime.utcnow()
+    if body.status == "resolved" and not ticket.closed_at:
         ticket.closed_at = datetime.datetime.utcnow()
 
     # Add audit comment
     status_labels = {"open": "Abierto", "in_progress": "En Progreso", "pending": "Pendiente", "resolved": "Resuelto", "closed": "Cerrado"}
+    audit_msg = f"Estado cambiado: {status_labels.get(old_status, old_status)} → {status_labels.get(body.status, body.status)} (desde Portal)"
+    if body.actual_hours is not None:
+        audit_msg += f" | Horas reales: {body.actual_hours}h"
+
     comment = TicketComment(
         ticket_id=ticket_id,
-        content=f"Estado cambiado: {status_labels.get(old_status, old_status)} → {status_labels.get(body.status, body.status)} (desde Portal)",
+        content=audit_msg,
         is_internal=False,
         comment_type="status_change",
     )
@@ -301,3 +319,49 @@ def portal_update_ticket_status(ticket_id: int, body: PortalTicketStatusUpdate, 
     result.assigned_to_name = agent_name
     return result
 
+
+# ═══ KPIs ═══
+
+@router.get("/kpis")
+def portal_kpis(client: Client = Depends(get_portal_client), db: Session = Depends(get_db)):
+    """Dashboard KPIs for the client portal."""
+    from sqlalchemy import func
+
+    tickets = db.query(Ticket).filter(Ticket.client_id == client.id).all()
+
+    # Counts by status
+    by_status = {}
+    for s in VALID_STATUSES:
+        by_status[s] = sum(1 for t in tickets if t.status == s)
+
+    # Counts by type
+    by_type = {"bug": 0, "feature": 0, "consultation": 0}
+    for t in tickets:
+        tt = t.ticket_type or "consultation"
+        if tt in by_type:
+            by_type[tt] += 1
+
+    # Hours
+    total_estimated = sum(t.estimated_hours or 0 for t in tickets)
+    total_actual = sum(t.actual_hours or 0 for t in tickets)
+    resolved_tickets = [t for t in tickets if t.status in ("resolved", "closed") and t.actual_hours]
+    avg_hours = (sum(t.actual_hours for t in resolved_tickets) / len(resolved_tickets)) if resolved_tickets else 0
+
+    # Resolution time (days)
+    resolution_times = []
+    for t in tickets:
+        if t.closed_at and t.created_at:
+            delta = (t.closed_at - t.created_at).total_seconds() / 86400
+            resolution_times.append(delta)
+    avg_resolution_days = (sum(resolution_times) / len(resolution_times)) if resolution_times else 0
+
+    return {
+        "total": len(tickets),
+        "by_status": by_status,
+        "by_type": by_type,
+        "total_estimated_hours": round(total_estimated, 1),
+        "total_actual_hours": round(total_actual, 1),
+        "avg_hours_per_ticket": round(avg_hours, 1),
+        "avg_resolution_days": round(avg_resolution_days, 1),
+        "resolved_count": len(resolved_tickets),
+    }
