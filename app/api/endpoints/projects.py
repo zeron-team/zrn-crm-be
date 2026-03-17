@@ -2,13 +2,13 @@
 import os
 from typing import Optional, List
 from datetime import datetime, timezone, date
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File as FastFile
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File as FastFile, Form, Body
 from pydantic import BaseModel
 from sqlalchemy import desc, func, asc
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
-from app.models.project import Project, ProjectMember, Sprint, Task, ProjectVersion, TaskChecklistItem, TaskAttachment, ProjectNote, ProjectWikiPage
+from app.models.project import Project, ProjectMember, Sprint, Task, ProjectVersion, TaskChecklistItem, TaskAttachment, TaskComment, ProjectNote, ProjectWikiPage
 from app.models.client import Client
 from app.models.quote import Quote
 from app.models.user import User
@@ -389,11 +389,13 @@ def list_sprints(project_id: int, version_id: Optional[int] = Query(None), db: S
     sprints = q.order_by(desc(Sprint.created_at)).all()
     result = []
     for s in sprints:
+        task_count = db.query(func.count(Task.id)).filter(Task.sprint_id == s.id).scalar()
         result.append({
             "id": s.id, "name": s.name, "goal": s.goal,
             "start_date": str(s.start_date) if s.start_date else None,
             "end_date": str(s.end_date) if s.end_date else None,
             "status": s.status, "version_id": s.version_id,
+            "task_count": task_count,
             "created_at": s.created_at,
         })
     return result
@@ -497,7 +499,7 @@ def get_task(project_id: int, task_id: int, db: Session = Depends(get_db)):
     result = task_to_dict(t, db)
     result["children"] = [task_to_dict(c, db) for c in children]
     result["checklist"] = [{"id": ci.id, "text": ci.text, "is_checked": ci.is_checked, "position": ci.position} for ci in checklist]
-    result["attachments"] = [{"id": a.id, "filename": a.filename, "file_url": a.file_url, "file_size": a.file_size, "created_at": str(a.created_at)} for a in atts]
+    result["attachments"] = [{"id": a.id, "filename": a.filename, "display_name": a.display_name, "file_url": a.file_url, "file_size": a.file_size, "created_at": str(a.created_at)} for a in atts]
     return result
 
 
@@ -550,14 +552,47 @@ def delete_task(project_id: int, task_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{project_id}/gantt")
 def gantt_data(project_id: int, db: Session = Depends(get_db)):
-    """Return all tasks with dates for Gantt rendering."""
-    tasks = db.query(Task).filter(Task.project_id == project_id).order_by(Task.type.desc(), Task.position).all()
+    """Return versions, sprints, and tasks with dates for Gantt rendering."""
     result = []
+
+    # Versions
+    versions_q = db.query(ProjectVersion).filter(ProjectVersion.project_id == project_id).order_by(ProjectVersion.start_date.asc().nullslast(), ProjectVersion.id).all()
+    for v in versions_q:
+        if not v.start_date and not v.release_date:
+            continue
+        result.append({
+            "id": f"v-{v.id}", "key": v.name, "title": v.name,
+            "type": "version", "status": v.status, "priority": "",
+            "parent_id": None, "sprint_id": None,
+            "start_date": str(v.start_date) if v.start_date else str(v.created_at.date()),
+            "end_date": str(v.release_date) if v.release_date else None,
+            "progress": 100 if v.status == "released" else (50 if v.status == "in_progress" else 0),
+            "assigned_to": None,
+        })
+
+    # Sprints
+    sprints_q = db.query(Sprint).filter(Sprint.project_id == project_id).order_by(Sprint.start_date.asc().nullslast(), Sprint.id).all()
+    for s in sprints_q:
+        if not s.start_date and not s.end_date:
+            continue
+        result.append({
+            "id": f"s-{s.id}", "key": s.name, "title": s.name,
+            "type": "sprint", "status": s.status, "priority": "",
+            "parent_id": f"v-{s.version_id}" if s.version_id else None,
+            "sprint_id": s.id,
+            "start_date": str(s.start_date) if s.start_date else str(s.created_at.date()),
+            "end_date": str(s.end_date) if s.end_date else None,
+            "progress": 100 if s.status == "completed" else (50 if s.status == "active" else 0),
+            "assigned_to": None,
+        })
+
+    # Tasks grouped by sprint
+    tasks = db.query(Task).filter(Task.project_id == project_id).order_by(Task.sprint_id.asc().nullslast(), Task.type.desc(), Task.position).all()
     for t in tasks:
         result.append({
             "id": t.id, "key": t.key, "title": t.title,
             "type": t.type, "status": t.status, "priority": t.priority,
-            "parent_id": t.parent_id,
+            "parent_id": t.parent_id, "sprint_id": t.sprint_id,
             "start_date": str(t.start_date) if t.start_date else str(t.created_at.date()),
             "end_date": str(t.due_date) if t.due_date else None,
             "progress": 100 if t.status == "done" else (50 if t.status in ("in_progress", "in_review") else 0),
@@ -622,22 +657,37 @@ UPLOAD_DIR = "uploads/task_attachments"
 @router.get("/{project_id}/tasks/{task_id}/attachments")
 def list_attachments(project_id: int, task_id: int, db: Session = Depends(get_db)):
     atts = db.query(TaskAttachment).filter(TaskAttachment.task_id == task_id).order_by(desc(TaskAttachment.created_at)).all()
-    return [{"id": a.id, "filename": a.filename, "file_url": a.file_url, "file_size": a.file_size, "created_at": str(a.created_at)} for a in atts]
+    return [{"id": a.id, "filename": a.filename, "display_name": a.display_name, "file_url": a.file_url, "file_size": a.file_size, "created_at": str(a.created_at)} for a in atts]
 
 @router.post("/{project_id}/tasks/{task_id}/attachments", status_code=201)
-def upload_attachment(project_id: int, task_id: int, file: UploadFile = FastFile(...), db: Session = Depends(get_db)):
+def upload_attachment(project_id: int, task_id: int, file: UploadFile = FastFile(...), display_name: Optional[str] = Form(None), db: Session = Depends(get_db)):
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    safe_name = f"{task_id}_{int(datetime.now().timestamp())}_{file.filename}"
+    sanitized_filename = file.filename.replace(" ", "_")
+    safe_name = f"{task_id}_{int(datetime.now().timestamp())}_{sanitized_filename}"
     file_path = os.path.join(UPLOAD_DIR, safe_name)
     content = file.file.read()
     with open(file_path, "wb") as f:
         f.write(content)
     file_url = f"/{UPLOAD_DIR}/{safe_name}"
-    att = TaskAttachment(task_id=task_id, filename=file.filename, file_url=file_url, file_size=len(content))
+    att = TaskAttachment(task_id=task_id, filename=file.filename, display_name=display_name or None, file_url=file_url, file_size=len(content))
     db.add(att)
     db.commit()
     db.refresh(att)
-    return {"id": att.id, "filename": att.filename, "file_url": att.file_url, "file_size": att.file_size, "created_at": str(att.created_at)}
+    return {"id": att.id, "filename": att.filename, "display_name": att.display_name, "file_url": att.file_url, "file_size": att.file_size, "created_at": str(att.created_at)}
+
+class AttachmentUpdate(BaseModel):
+    display_name: Optional[str] = None
+
+@router.patch("/{project_id}/tasks/{task_id}/attachments/{att_id}")
+def update_attachment(project_id: int, task_id: int, att_id: int, data: AttachmentUpdate, db: Session = Depends(get_db)):
+    att = db.query(TaskAttachment).filter(TaskAttachment.id == att_id, TaskAttachment.task_id == task_id).first()
+    if not att:
+        raise HTTPException(404, "Attachment not found")
+    if data.display_name is not None:
+        att.display_name = data.display_name
+    db.commit()
+    db.refresh(att)
+    return {"id": att.id, "filename": att.filename, "display_name": att.display_name, "file_url": att.file_url, "file_size": att.file_size, "created_at": str(att.created_at)}
 
 @router.delete("/{project_id}/tasks/{task_id}/attachments/{att_id}")
 def delete_attachment(project_id: int, task_id: int, att_id: int, db: Session = Depends(get_db)):
@@ -649,6 +699,109 @@ def delete_attachment(project_id: int, task_id: int, att_id: int, db: Session = 
     if os.path.exists(local_path):
         os.remove(local_path)
     db.delete(att)
+    db.commit()
+    return {"ok": True}
+
+
+# ══════════════════════════════════════
+#  Task Comments
+# ══════════════════════════════════════
+
+COMMENT_UPLOAD_DIR = "uploads/task_comments"
+
+
+def comment_to_dict(c: TaskComment, db: Session) -> dict:
+    author = db.query(User).filter(User.id == c.author_id).first()
+    return {
+        "id": c.id, "task_id": c.task_id,
+        "author_id": c.author_id,
+        "author_name": author.full_name or author.username if author else "Usuario",
+        "author_avatar": getattr(author, 'avatar_url', None) if author else None,
+        "content": c.content,
+        "attachment_url": c.attachment_url, "attachment_name": c.attachment_name,
+        "attachment_size": c.attachment_size,
+        "created_at": str(c.created_at), "updated_at": str(c.updated_at),
+    }
+
+
+@router.get("/{project_id}/tasks/{task_id}/comments")
+def list_comments(project_id: int, task_id: int, db: Session = Depends(get_db)):
+    comments = db.query(TaskComment).filter(TaskComment.task_id == task_id).order_by(asc(TaskComment.created_at)).all()
+    return [comment_to_dict(c, db) for c in comments]
+
+
+@router.post("/{project_id}/tasks/{task_id}/comments", status_code=201)
+def create_comment(
+    project_id: int, task_id: int,
+    content: str = Form(...),
+    file: Optional[UploadFile] = FastFile(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    attachment_url = None
+    attachment_name = None
+    attachment_size = None
+    if file and file.filename:
+        os.makedirs(COMMENT_UPLOAD_DIR, exist_ok=True)
+        sanitized = file.filename.replace(" ", "_")
+        safe_name = f"{task_id}_{int(datetime.now().timestamp())}_{sanitized}"
+        file_path = os.path.join(COMMENT_UPLOAD_DIR, safe_name)
+        file_content = file.file.read()
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        attachment_url = f"/{COMMENT_UPLOAD_DIR}/{safe_name}"
+        attachment_name = file.filename
+        attachment_size = len(file_content)
+    comment = TaskComment(
+        task_id=task_id, author_id=current_user.id, content=content,
+        attachment_url=attachment_url, attachment_name=attachment_name,
+        attachment_size=attachment_size,
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return comment_to_dict(comment, db)
+
+
+class CommentUpdate(BaseModel):
+    content: str
+
+
+@router.put("/{project_id}/tasks/{task_id}/comments/{comment_id}")
+def update_comment(
+    project_id: int, task_id: int, comment_id: int,
+    data: CommentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    c = db.query(TaskComment).filter(TaskComment.id == comment_id, TaskComment.task_id == task_id).first()
+    if not c:
+        raise HTTPException(404, "Comment not found")
+    if c.author_id != current_user.id:
+        raise HTTPException(403, "Solo el autor puede editar este comentario")
+    c.content = data.content
+    c.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(c)
+    return comment_to_dict(c, db)
+
+
+@router.delete("/{project_id}/tasks/{task_id}/comments/{comment_id}")
+def delete_comment(
+    project_id: int, task_id: int, comment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    c = db.query(TaskComment).filter(TaskComment.id == comment_id, TaskComment.task_id == task_id).first()
+    if not c:
+        raise HTTPException(404, "Comment not found")
+    if c.author_id != current_user.id:
+        raise HTTPException(403, "Solo el autor puede eliminar este comentario")
+    if c.attachment_url:
+        local_path = c.attachment_url.lstrip("/")
+        if os.path.exists(local_path):
+            os.remove(local_path)
+    db.delete(c)
     db.commit()
     return {"ok": True}
 
@@ -800,6 +953,7 @@ class NoteUpdate(BaseModel):
     color: Optional[str] = None
     visibility: Optional[str] = None
     shared_with: Optional[list] = None
+    converted_task_key: Optional[str] = None
 
 class NoteReorder(BaseModel):
     order: list
@@ -810,6 +964,7 @@ def _note_dict(n, db):
         "sort_order": n.sort_order or 0,
         "visibility": n.visibility or "team",
         "shared_with": n.shared_with or [],
+        "converted_task_key": n.converted_task_key,
         "created_by": n.created_by,
         "created_by_name": db.query(User).get(n.created_by).full_name if n.created_by else None,
         "created_at": n.created_at, "updated_at": n.updated_at,

@@ -98,3 +98,9 @@ class Events:
     USER_LOGIN = "user.login"
     USER_LOGOUT = "user.logout"
     BACKUP_COMPLETED = "backup.completed"
+
+    # Notifications
+    CALENDAR_REMINDER = "calendar.reminder"
+    QUOTE_EXPIRATION = "quote.expiration"
+    SPRINT_ENDING = "sprint.ending"
+    TASK_ASSIGNED = "task.assigned"

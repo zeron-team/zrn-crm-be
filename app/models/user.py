@@ -34,3 +34,7 @@ class User(Base):
     emergency_phone = Column(String, nullable=True)
     blood_type = Column(String, nullable=True)        # A+, B-, O+, etc.
     bio = Column(Text, nullable=True)                 # Observaciones personales
+
+    # ── Notification Channels ──
+    telegram_chat_id = Column(String, nullable=True)
+    discord_webhook_url = Column(String(500), nullable=True)

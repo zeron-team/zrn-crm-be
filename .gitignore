@@ -29,8 +29,12 @@ Thumbs.db
 # Uploads (user data)
 uploads/invoices/*
 uploads/service_payments/*
+uploads/task_attachments/*
+uploads/task_comments/*
 !uploads/invoices/.gitkeep
 !uploads/service_payments/.gitkeep
+!uploads/task_attachments/.gitkeep
+!uploads/task_comments/.gitkeep
 
 # Logs
 *.log

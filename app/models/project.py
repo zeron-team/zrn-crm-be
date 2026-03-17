@@ -111,6 +111,7 @@ class Task(Base):
     reporter_user = relationship("User", foreign_keys=[reporter], backref="reported_tasks")
     checklist_items = relationship("TaskChecklistItem", back_populates="task", cascade="all, delete-orphan", order_by="TaskChecklistItem.position")
     attachments = relationship("TaskAttachment", back_populates="task", cascade="all, delete-orphan")
+    comments = relationship("TaskComment", back_populates="task", cascade="all, delete-orphan", order_by="TaskComment.created_at")
 
 
 class TaskChecklistItem(Base):
@@ -132,6 +133,7 @@ class TaskAttachment(Base):
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
     filename = Column(String(255), nullable=False)
+    display_name = Column(String(255), nullable=True)  # User-friendly name for identification
     file_url = Column(String(500), nullable=False)
     file_size = Column(Integer, nullable=True)  # bytes
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -139,6 +141,24 @@ class TaskAttachment(Base):
 
     task = relationship("Task", back_populates="attachments")
     uploader = relationship("User", backref="task_uploads")
+
+
+class TaskComment(Base):
+    __tablename__ = "task_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    attachment_url = Column(String(500), nullable=True)
+    attachment_name = Column(String(255), nullable=True)
+    attachment_size = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    task = relationship("Task", back_populates="comments")
+    author = relationship("User", backref="task_comments")
 
 
 class ProjectNote(Base):
@@ -152,6 +172,7 @@ class ProjectNote(Base):
     sort_order = Column(Integer, default=0)
     visibility = Column(String(20), default="team")        # private, team, shared
     shared_with = Column(JSON, nullable=True)               # list of user IDs
+    converted_task_key = Column(String(20), nullable=True)   # set when note is converted to task
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),

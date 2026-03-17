@@ -40,3 +40,5 @@ from app.models.installed_module import InstalledModule
 from app.models.accounting import AccountingPeriod, AccountingEntry, TaxObligation
 from app.models.employee_document import EmployeeDocument
 from app.models.news import News, NewsDismissal
+from app.models.notification_preference import NotificationPreference
+from app.models.notification_log import NotificationLog

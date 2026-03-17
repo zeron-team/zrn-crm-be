@@ -38,6 +38,8 @@ class UserInDBBase(UserBase):
     emergency_phone: Optional[str] = None
     blood_type: Optional[str] = None
     bio: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    discord_webhook_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -66,3 +68,5 @@ class ProfileUpdate(BaseModel):
     emergency_phone: Optional[str] = None
     blood_type: Optional[str] = None
     bio: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    discord_webhook_url: Optional[str] = None
