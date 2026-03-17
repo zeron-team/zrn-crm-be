@@ -30,9 +30,13 @@ def _ticket_to_response(t: Ticket, include_comments=False):
         "status": t.status,
         "priority": t.priority,
         "category": t.category,
+        "ticket_type": t.ticket_type,
         "client_id": t.client_id,
         "assigned_to": t.assigned_to,
         "created_by": t.created_by,
+        "estimated_hours": t.estimated_hours,
+        "actual_hours": t.actual_hours,
+        "estimated_date": t.estimated_date,
         "created_at": t.created_at,
         "updated_at": t.updated_at,
         "closed_at": t.closed_at,
@@ -69,6 +73,7 @@ def create_ticket(ticket_in: TicketCreate, db: Session = Depends(get_db)):
         status=ticket_in.status or "open",
         priority=ticket_in.priority or "medium",
         category=ticket_in.category or "general",
+        ticket_type=ticket_in.ticket_type,
         client_id=ticket_in.client_id,
         assigned_to=ticket_in.assigned_to,
         created_by=ticket_in.created_by,
@@ -150,6 +155,15 @@ def update_ticket(ticket_id: int, ticket_in: TicketUpdate, user_id: Optional[int
                 changes.append(f"Prioridad: {old_val} → {value}")
             elif field == "assigned_to":
                 changes.append(f"Asignación actualizada")
+            elif field == "estimated_hours":
+                changes.append(f"Horas estimadas: {value}h")
+            elif field == "actual_hours":
+                changes.append(f"Horas reales: {value}h")
+            elif field == "estimated_date":
+                changes.append(f"Fecha tentativa actualizada")
+            elif field == "ticket_type":
+                type_labels = {"bug": "Bug", "feature": "Requerimiento", "consultation": "Consulta"}
+                changes.append(f"Tipo: {type_labels.get(str(value), value)}")
             setattr(ticket, field, value)
 
     ticket.updated_at = datetime.now(timezone.utc)

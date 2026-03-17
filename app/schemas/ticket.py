@@ -32,6 +32,7 @@ class TicketBase(BaseModel):
     status: Optional[str] = "open"
     priority: Optional[str] = "medium"
     category: Optional[str] = "general"
+    ticket_type: Optional[str] = None
     client_id: Optional[int] = None
     assigned_to: Optional[int] = None
 
@@ -44,6 +45,10 @@ class TicketUpdate(BaseModel):
     status: Optional[str] = None
     priority: Optional[str] = None
     category: Optional[str] = None
+    ticket_type: Optional[str] = None
+    estimated_hours: Optional[float] = None
+    actual_hours: Optional[float] = None
+    estimated_date: Optional[datetime] = None
     client_id: Optional[int] = None
     assigned_to: Optional[int] = None
 
@@ -51,6 +56,9 @@ class TicketResponse(TicketBase):
     id: int
     ticket_number: str
     created_by: Optional[int] = None
+    estimated_hours: Optional[float] = None
+    actual_hours: Optional[float] = None
+    estimated_date: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
