@@ -110,6 +110,12 @@ else:
 app.state.module_registry = registry
 app.state.event_bus = event_bus
 
+# ═══════════════════════════════════════════════════════════
+# PUBLIC PORTAL (no CRM auth required)
+# ═══════════════════════════════════════════════════════════
+from app.api.endpoints.portal import router as portal_router
+app.include_router(portal_router, prefix=settings.API_V1_STR)
+
 
 # ═══════════════════════════════════════════════════════════
 # STATIC FILES
