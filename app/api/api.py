@@ -68,3 +68,6 @@ api_router.include_router(accounting.router)
 
 from app.api.endpoints import employee_documents
 api_router.include_router(employee_documents.router)
+
+from app.api.endpoints import bot_flow
+api_router.include_router(bot_flow.router, prefix="/bot-flows", tags=["bot_flows"])

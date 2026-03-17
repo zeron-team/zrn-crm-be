@@ -1,5 +1,5 @@
 """
-Communications Module — Email, WhatsApp, Notifications.
+Communications Module — Email, WhatsApp, Notifications, Bot Flows.
 """
 from app.modules import ModuleManifest
 
@@ -9,6 +9,7 @@ def register(registry):
     from app.api.endpoints import whatsapp as whatsapp_router
     from app.api.endpoints import notifications
     from app.api.endpoints import notification_preferences
+    from app.api.endpoints import bot_flow
 
     # Register event bus subscribers for notifications
     try:
@@ -21,8 +22,8 @@ def register(registry):
     manifest = ModuleManifest(
         name="Comunicaciones",
         slug="communications",
-        version="1.1.0",
-        description="Email corporativo, WhatsApp integrado, notificaciones multi-canal",
+        version="1.2.0",
+        description="Email corporativo, WhatsApp integrado, notificaciones multi-canal, bot flows",
         icon="Mail",
         category="business",
         dependencies=["core"],
@@ -32,7 +33,9 @@ def register(registry):
             (notifications.router, "", ["notifications"]),
             (notification_preferences.router, "", ["notification-preferences"]),
             (notification_preferences.logs_router, "", ["notification-logs"]),
+            (bot_flow.router, "/bot-flows", ["bot-flows"]),
         ],
     )
     registry.register(manifest)
+
 
