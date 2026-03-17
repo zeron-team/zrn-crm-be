@@ -12,12 +12,21 @@ from app.core.redis_cache import check_rate_limit
 
 logger = logging.getLogger(__name__)
 
+# Endpoints exempt from rate limiting (high-frequency polling / infrastructure)
+RATE_LIMIT_SKIP = [
+    "/api/v1/users/heartbeat",
+    "/api/v1/users/online",
+]
+
 # Rate limit configs: {path_prefix: (max_requests, window_seconds)}
 RATE_LIMITS = {
-    "/api/v1/ai/chat": (10, 60),         # 10 requests/min for AI
-    "/api/v1/auth/login": (5, 60),        # 5 login attempts/min
-    "/api/v1/arca/emit": (30, 60),        # 30 ARCA submissions/min
-    "/api/v1/arca/": (60, 60),            # 60 ARCA queries/min
+    "/api/v1/ai/chat": (10, 60),                # 10 requests/min for AI
+    "/api/v1/auth/login": (5, 60),               # 5 login attempts/min
+    "/api/v1/arca/emit": (30, 60),               # 30 ARCA submissions/min
+    "/api/v1/arca/": (60, 60),                   # 60 ARCA queries/min
+    "/api/v1/time-entries/my-status/": (300, 60), # 300/min — polled every 30s
+    "/api/v1/notifications/counts": (300, 60),    # 300/min — polled every 30s
+    "/api/v1/email/": (300, 60),                  # 300/min — polled every 30s
 }
 
 DEFAULT_RATE_LIMIT = (120, 60)  # 120 requests/min for everything else
@@ -29,6 +38,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if not path.startswith("/api/"):
             return await call_next(request)
+
+        # Skip rate limiting for high-frequency infrastructure endpoints
+        for skip_path in RATE_LIMIT_SKIP:
+            if path.startswith(skip_path):
+                return await call_next(request)
 
         # Determine rate limit for this path
         max_req, window = DEFAULT_RATE_LIMIT

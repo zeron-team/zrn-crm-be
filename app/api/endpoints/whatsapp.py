@@ -2,7 +2,7 @@
 import httpx
 from fastapi import APIRouter, Request, Response
 
-router = APIRouter(prefix="/wa", tags=["whatsapp"])
+router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 WA_SERVICE = "http://127.0.0.1:3001"
 
