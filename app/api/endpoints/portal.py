@@ -1,5 +1,6 @@
 """Client Portal API — public endpoints for client ticket management."""
 import jwt
+import bcrypt
 import datetime
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from typing import Optional, List
 from app.database import get_db
 from app.models.client import Client
 from app.models.ticket import Ticket, TicketComment
+from app.models.user import User
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -19,6 +21,7 @@ ALGORITHM = "HS256"
 
 class PortalLoginRequest(BaseModel):
     email: str
+    password: str
 
 class PortalLoginResponse(BaseModel):
     token: str
@@ -58,6 +61,7 @@ class PortalTicketResponse(BaseModel):
     status: str
     priority: str
     category: Optional[str] = None
+    assigned_to_name: Optional[str] = None
     created_at: datetime.datetime
     updated_at: Optional[datetime.datetime] = None
     closed_at: Optional[datetime.datetime] = None
@@ -106,13 +110,20 @@ def get_portal_client(authorization: str = Header(None), db: Session = Depends(g
 
 @router.post("/login", response_model=PortalLoginResponse)
 def portal_login(body: PortalLoginRequest, db: Session = Depends(get_db)):
-    """Login with client email — returns a portal token."""
+    """Login with client email and password — returns a portal token."""
     client = db.query(Client).filter(
         Client.email.ilike(body.email.strip())
     ).first()
     
     if not client:
         raise HTTPException(status_code=404, detail="No se encontró una empresa con ese email")
+    
+    # Verify password
+    if not client.portal_password:
+        raise HTTPException(status_code=401, detail="Tu cuenta aún no tiene contraseña configurada. Contactá al administrador.")
+    
+    if not bcrypt.checkpw(body.password.encode(), client.portal_password.encode()):
+        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
     
     token = create_portal_token(client.id, client.email)
     return PortalLoginResponse(
@@ -138,10 +149,18 @@ def portal_me(client: Client = Depends(get_portal_client)):
 @router.get("/tickets", response_model=List[PortalTicketResponse])
 def portal_list_tickets(client: Client = Depends(get_portal_client), db: Session = Depends(get_db)):
     """List all tickets for the authenticated client."""
-    tickets = db.query(Ticket).filter(
+    results = db.query(Ticket, User.full_name).outerjoin(
+        User, Ticket.assigned_to == User.id
+    ).filter(
         Ticket.client_id == client.id
     ).order_by(Ticket.created_at.desc()).all()
-    return tickets
+    
+    tickets_out = []
+    for ticket, agent_name in results:
+        t = PortalTicketResponse.model_validate(ticket)
+        t.assigned_to_name = agent_name
+        tickets_out.append(t)
+    return tickets_out
 
 
 @router.post("/tickets", response_model=PortalTicketResponse)
@@ -181,6 +200,13 @@ def portal_ticket_detail(ticket_id: int, client: Client = Depends(get_portal_cli
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket no encontrado")
     
+    # Get assigned agent name
+    agent_name = None
+    if ticket.assigned_to:
+        agent = db.query(User).filter(User.id == ticket.assigned_to).first()
+        if agent:
+            agent_name = agent.full_name
+    
     # Get only non-internal comments
     comments = db.query(TicketComment).filter(
         TicketComment.ticket_id == ticket_id,
@@ -189,6 +215,7 @@ def portal_ticket_detail(ticket_id: int, client: Client = Depends(get_portal_cli
 
     return PortalTicketDetail(
         **{c.name: getattr(ticket, c.name) for c in ticket.__table__.columns},
+        assigned_to_name=agent_name,
         comments=[PortalComment(
             id=c.id,
             content=c.content,

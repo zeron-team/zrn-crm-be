@@ -21,6 +21,7 @@ class Client(Base):
     arca_validated = Column(Boolean, default=False)               # Validated via ARCA/AFIP
     arca_validated_at = Column(DateTime, nullable=True)           # When validated
     is_active = Column(Boolean, default=True)
+    portal_password = Column(String(255), nullable=True)            # Portal de soporte
     seller_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     contacts = relationship("Contact", back_populates="client")
