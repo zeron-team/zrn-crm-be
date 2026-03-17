@@ -10,7 +10,8 @@ class CalendarEventBase(BaseModel):
     related_to: Optional[str] = None
     color: Optional[str] = "#3788d8"
     client_id: Optional[int] = None
-    contact_id: Optional[int] = None
+    contact_id: Optional[int] = None  # legacy single contact (kept for compat)
+    contact_ids: Optional[List[int]] = None  # multiple contacts
     lead_id: Optional[int] = None
     status: Optional[str] = "pending"
     status_reason: Optional[str] = None
@@ -29,6 +30,15 @@ class CalendarEventUpdate(CalendarEventBase):
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
 
+class ContactMini(BaseModel):
+    id: int
+    name: str
+    email: Optional[str] = None
+    position: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
 class ActivityNoteResponse(BaseModel):
     id: int
     event_id: int
@@ -46,6 +56,7 @@ class CalendarEventInDBBase(CalendarEventBase):
 
 class CalendarEventResponse(CalendarEventInDBBase):
     notes: List[ActivityNoteResponse] = []
+    contacts: List[ContactMini] = []
 
 class ActivityNoteCreate(BaseModel):
     content: str

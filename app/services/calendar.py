@@ -92,6 +92,7 @@ class CalendarEventService:
                     color = "#ef4444" # Red
                     client_id = None
                     contact_id = None
+                    contact_ids = []
                     lead_id = None
                     status = "pending"
                     status_reason = None
@@ -102,7 +103,7 @@ class CalendarEventService:
                     recurrence_end_date = None
                     project_id = None
                     notes = []
-                    
+                    contacts = []
                 events_list.append(VirtualEvent())
                 
         return events_list
