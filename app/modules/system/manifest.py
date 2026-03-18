@@ -15,7 +15,7 @@ def register(registry):
     manifest = ModuleManifest(
         name="Sistema",
         slug="system",
-        version="1.0.0",
+        version="8.2.5",
         description="Configuración, seguridad, auditoría, roles y permisos",
         icon="Cog",
         category="core",

@@ -13,7 +13,7 @@ def register(registry):
     manifest = ModuleManifest(
         name="CRM",
         slug="crm",
-        version="1.0.0",
+        version="8.2.5",
         description="Gestión comercial: leads, cuentas, contactos, presupuestos, soporte",
         icon="Briefcase",
         category="business",

@@ -10,7 +10,7 @@ def register(registry):
     manifest = ModuleManifest(
         name="Proyectos",
         slug="projects",
-        version="1.0.0",
+        version="8.2.5",
         description="Gestión de proyectos con tablero Kanban y Wiki colaborativa",
         icon="FolderKanban",
         category="business",

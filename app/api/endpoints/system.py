@@ -64,7 +64,7 @@ def system_status(
 
     status = {
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "4.3.0",
+        "version": "8.2.5",
         "architecture": "modular",
         "modules_loaded": module_count,
         "integrations": [],
@@ -78,7 +78,7 @@ def system_status(
         "category": "core",
         "icon": "Server",
         "status": "ok",
-        "details": {"framework": "FastAPI", "version": "4.2.0"},
+        "details": {"framework": "FastAPI", "version": "8.2.5"},
     })
 
     # ── 2. PostgreSQL ──

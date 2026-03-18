@@ -10,7 +10,7 @@ def register(registry):
     manifest = ModuleManifest(
         name="RRHH",
         slug="hr",
-        version="1.0.0",
+        version="8.2.5",
         description="Recursos Humanos: empleados, fichadas, liquidación de sueldos",
         icon="UserCheck",
         category="business",

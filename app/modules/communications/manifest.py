@@ -22,7 +22,7 @@ def register(registry):
     manifest = ModuleManifest(
         name="Comunicaciones",
         slug="communications",
-        version="1.2.0",
+        version="8.2.5",
         description="Email corporativo, WhatsApp integrado, notificaciones multi-canal, bot flows",
         icon="Mail",
         category="business",

@@ -10,7 +10,7 @@ def register(registry):
     manifest = ModuleManifest(
         name="Contabilidad",
         slug="accounting",
-        version="1.0.0",
+        version="8.2.5",
         description="Períodos contables, asientos, obligaciones fiscales y dashboard contable",
         icon="Calculator",
         category="business",

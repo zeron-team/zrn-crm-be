@@ -11,7 +11,7 @@ def register(registry):
     manifest = ModuleManifest(
         name="Principal",
         slug="core",
-        version="1.0.0",
+        version="8.2.5",
         description="Módulo base: autenticación, usuarios, dashboard, notas, calendario, IA",
         icon="LayoutDashboard",
         category="core",

@@ -16,7 +16,7 @@ def register(registry):
     manifest = ModuleManifest(
         name="ERP",
         slug="erp",
-        version="1.0.0",
+        version="8.2.5",
         description="Facturación, ARCA/AFIP, remitos, inventario, depósitos, tipo de cambio",
         icon="Receipt",
         category="business",

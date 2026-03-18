@@ -10,7 +10,7 @@ def register(registry):
     manifest = ModuleManifest(
         name="Catálogo",
         slug="catalog",
-        version="1.0.0",
+        version="8.2.5",
         description="Catálogo de productos, servicios y mano de obra con categorías",
         icon="Package",
         category="business",
