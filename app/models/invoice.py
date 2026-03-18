@@ -57,11 +57,13 @@ class Invoice(Base):
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
     provider_id = Column(Integer, ForeignKey("providers.id", ondelete="SET NULL"), nullable=True)
     quote_id = Column(Integer, ForeignKey("quotes.id", ondelete="SET NULL"), nullable=True)
+    sales_order_id = Column(Integer, ForeignKey("sales_orders.id", ondelete="SET NULL"), nullable=True)
     seller_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     status = relationship("InvoiceStatus", back_populates="invoices")
     client = relationship("Client", back_populates="invoices")
     provider = relationship("Provider", back_populates="invoices")
     quote = relationship("Quote")
+    sales_order = relationship("SalesOrder", backref="invoices")
     items = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
     iva_items = relationship("InvoiceIvaItem", back_populates="invoice", cascade="all, delete-orphan")

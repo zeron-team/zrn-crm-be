@@ -36,6 +36,7 @@ class InvoiceBase(BaseModel):
     client_id: Optional[int] = None
     provider_id: Optional[int] = None
     quote_id: Optional[int] = None
+    sales_order_id: Optional[int] = None
     seller_id: Optional[int] = None
     # ARCA fields
     arca_cbte_tipo: Optional[int] = None

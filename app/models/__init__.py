@@ -4,6 +4,8 @@ from app.models.client import Client
 from app.models.provider import Provider
 from app.models.contact import Contact
 from app.models.product import Product
+from app.models.sales_order import SalesOrder, SalesOrderStatus
+from app.models.sales_order_item import SalesOrderItem
 from app.models.invoice import InvoiceStatus, Invoice
 from app.models.invoice_item import InvoiceItem
 from app.models.provider_service import ProviderService

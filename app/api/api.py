@@ -74,3 +74,6 @@ api_router.include_router(bot_flow.router, prefix="/bot-flows", tags=["bot_flows
 
 from app.api.endpoints import portal
 api_router.include_router(portal.router)
+
+from app.api.endpoints import sales_orders
+api_router.include_router(sales_orders.router)

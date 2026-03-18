@@ -10,6 +10,7 @@ def register(registry):
         invoices, arca, delivery_notes, payment_orders,
         purchase_orders, inventory, warehouses, exchange_rates,
         service_payments, provider_services, providers,
+        sales_orders,
     )
 
     manifest = ModuleManifest(
@@ -32,6 +33,7 @@ def register(registry):
             (exchange_rates.router, "", ["exchange_rates"]),
             (service_payments.router, "", ["service_payments"]),
             (provider_services.router, "/provider-services", ["provider_services"]),
+            (sales_orders.router, "", ["sales_orders"]),
         ],
     )
     registry.register(manifest)
